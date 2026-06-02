@@ -127,6 +127,7 @@ public final class RagdollRegistry {
       Vector3d angular = new Vector3d();
       ServerSubLevel body = launch(level, player, linear, angular, elytraPose, RagdollSettings.autoSeatOnTrigger());
       if (body != null) {
+         RagdollSessionManager.setDurationTicks(body, RagdollSettings.manualRagdollDurationTicks());
          SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] manual ragdoll {} for {} launch={} m/s",
             shortId(body.getUniqueId()), player.getGameProfile().getName(), fmtVec3dc(linear));
       }

@@ -16,12 +16,15 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.gui.ConfigurationScreen;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers;
 
 @Mod(value = "sable_player_ragdoll", dist = {Dist.CLIENT})
 public final class SablePlayerRagdollNeoForgeClient {
    @SuppressWarnings("unchecked")
    public SablePlayerRagdollNeoForgeClient(ModContainer container, IEventBus modBus) {
+      container.registerExtensionPoint(IConfigScreenFactory.class, (IConfigScreenFactory) ConfigurationScreen::new);
       RagdollCameraHelper.init();
       RagdollKeybinds.init(modBus);
       RagdollInputClient.init();

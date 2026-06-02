@@ -28,6 +28,8 @@ public final class RagdollConfig {
       .define("autoSeatOnTrigger", true);
    public static final IntValue RAGDOLL_DURATION_TICKS = BUILDER.comment("Ticks after launch before the ragdoll expires and the player is unseated.")
       .defineInRange("ragdollDurationTicks", 40, 5, 600);
+   public static final IntValue MANUAL_RAGDOLL_DURATION_TICKS = BUILDER.comment("Ticks before a ragdoll launched by the hotkey can expire.")
+      .defineInRange("manualRagdollDurationTicks", 40, 5, 600);
    public static final IntValue STEP1_BODY_LIFETIME_TICKS = BUILDER.comment("Hard safety limit: force expiry if the ragdoll still exists after this many ticks.")
       .defineInRange("step1BodyLifetimeTicks", 200, 20, 2400);
    public static final DoubleValue RELEASE_SPEED_THRESHOLD = BUILDER.comment("Expire after touchdown only once the ragdoll slows below this speed (m/s).")
@@ -61,6 +63,7 @@ public final class RagdollConfig {
       RagdollSettings.setRagdollMaxLaunchSpeed((Double) RAGDOLL_MAX_LAUNCH_SPEED.get());
       RagdollSettings.setAutoSeatOnTrigger((Boolean) AUTO_SEAT_ON_TRIGGER.get());
       RagdollSettings.setRagdollDurationTicks((Integer) RAGDOLL_DURATION_TICKS.get());
+      RagdollSettings.setManualRagdollDurationTicks((Integer) MANUAL_RAGDOLL_DURATION_TICKS.get());
       RagdollSettings.setStep1BodyLifetimeTicks((Integer) STEP1_BODY_LIFETIME_TICKS.get());
       RagdollSettings.setReleaseSpeedThreshold((Double) RELEASE_SPEED_THRESHOLD.get());
       RagdollSettings.setDebugLogging((Boolean) DEBUG_LOGGING.get());

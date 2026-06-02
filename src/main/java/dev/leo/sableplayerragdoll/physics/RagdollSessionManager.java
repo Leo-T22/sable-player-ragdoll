@@ -27,6 +27,7 @@ public final class RagdollSessionManager {
    private static final String PLAYER_ID_KEY = "playerId";
    private static final String NON_PLAYER_KEY = "nonPlayer";
    private static final String EXPIRING_KEY = "expiring";
+   private static final String DURATION_TICKS_KEY = "durationTicks";
    private static final String DESPAWN_MODE_KEY = "despawnMode";
    private static final String DESPAWN_TICKS_KEY = "despawnTicks";
    private static final String DESPAWN_SPEED_KEY = "despawnSpeed";
@@ -74,6 +75,16 @@ public final class RagdollSessionManager {
       }
    }
 
+   public static void setDurationTicks(ServerSubLevel subLevel, int ticks) {
+      CompoundTag tag = subLevel.getUserDataTag();
+      if (tag == null) {
+         tag = new CompoundTag();
+      }
+
+      tag.putInt(DURATION_TICKS_KEY, Math.max(1, ticks));
+      subLevel.setUserDataTag(tag);
+   }
+
    public static void setPlayerlessDespawnRule(ServerSubLevel subLevel, PlayerlessDespawnRule rule) {
       CompoundTag tag = subLevel.getUserDataTag();
       if (tag == null) {
@@ -104,7 +115,7 @@ public final class RagdollSessionManager {
 
    public static boolean canManualDismount(ServerLevel level, ServerSubLevel subLevel) {
       CompoundTag tag = subLevel.getUserDataTag();
-      return tag != null && level.getGameTime() - tag.getLong(START_TICK_KEY) >= (long) RagdollSettings.ragdollDurationTicks();
+      return tag != null && level.getGameTime() - tag.getLong(START_TICK_KEY) >= (long) scaledRagdollDurationTicks(tag);
    }
 
    public static void tickActiveRagdolls(ServerLevel level) {
@@ -212,7 +223,8 @@ public final class RagdollSessionManager {
    }
 
    private static int scaledRagdollDurationTicks(CompoundTag tag) {
-      return RagdollSettings.ragdollDurationTicks() * durationScale(tag);
+      int durationTicks = tag.contains(DURATION_TICKS_KEY) ? tag.getInt(DURATION_TICKS_KEY) : RagdollSettings.ragdollDurationTicks();
+      return durationTicks * durationScale(tag);
    }
 
    private static int scaledSafetyLifetimeTicks(CompoundTag tag) {

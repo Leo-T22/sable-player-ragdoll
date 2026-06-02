@@ -7,6 +7,7 @@ public final class RagdollSettings {
    private static double maxFlingSpeed = 128.0;
    private static double ragdollMaxLaunchSpeed = 128.0;
    private static int ragdollDurationTicks = 40;
+   private static int manualRagdollDurationTicks = 40;
    private static int step1BodyLifetimeTicks = 200;
    private static double releaseSpeedThreshold = 0.1;
    private static int cooldownTicks = 60;
@@ -34,6 +35,9 @@ public final class RagdollSettings {
 
    public static int ragdollDurationTicks() { return ragdollDurationTicks; }
    public static void setRagdollDurationTicks(int v) { ragdollDurationTicks = Math.max(1, v); }
+
+   public static int manualRagdollDurationTicks() { return manualRagdollDurationTicks; }
+   public static void setManualRagdollDurationTicks(int v) { manualRagdollDurationTicks = Math.max(1, v); }
 
    public static int step1BodyLifetimeTicks() { return step1BodyLifetimeTicks; }
    public static void setStep1BodyLifetimeTicks(int v) { step1BodyLifetimeTicks = Math.max(20, v); }
