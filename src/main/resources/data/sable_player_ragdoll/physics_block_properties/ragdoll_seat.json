@@ -1,0 +1,7 @@
+{
+  "selector": "sable_player_ragdoll:ragdoll_seat",
+  "properties": {
+    "sable:mass": 4.0,
+    "sable:volume": 1.0
+  }
+}

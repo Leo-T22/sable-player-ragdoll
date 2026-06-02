@@ -1,0 +1,32 @@
+modLoader = "javafml"
+loaderVersion = "[4,)"
+license = "${license}"
+[[mods]]
+modId = "${mod_id}"
+version = "${version}"
+displayName = "${mod_name}"
+logoFile = "sable_player_ragdoll_icon.png"
+authors = "${mod_author}"
+description = '''${description}'''
+[[mixins]]
+config = "sable_player_ragdoll.mixins.json"
+[[mixins]]
+config = "sable_player_ragdoll.neoforge.mixins.json"
+[[dependencies."${mod_id}"]]
+modId = "neoforge"
+type = "required"
+versionRange = "[21.1.219,)"
+ordering = "NONE"
+side = "BOTH"
+[[dependencies."${mod_id}"]]
+modId = "minecraft"
+type = "required"
+versionRange = "[1.21.1]"
+ordering = "NONE"
+side = "BOTH"
+[[dependencies.${mod_id}]]
+modId = "sable"
+type = "required"
+versionRange = "[${sable_mod_version},)"
+ordering = "AFTER"
+side = "BOTH"

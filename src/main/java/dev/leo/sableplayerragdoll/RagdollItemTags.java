@@ -1,0 +1,36 @@
+package dev.leo.sableplayerragdoll;
+
+import net.minecraft.core.registries.Registries;
+import net.minecraft.core.component.DataComponents;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.component.CustomData;
+
+public final class RagdollItemTags {
+   private static final String TEST_MARKER_KEY = "sable_player_ragdoll_ragdoll_on_hit";
+   public static final TagKey<Item> RAGDOLL_ON_HIT = TagKey.create(
+      Registries.ITEM,
+      ResourceLocation.fromNamespaceAndPath(SablePlayerRagdoll.MOD_ID, "ragdoll_on_hit")
+   );
+
+   private RagdollItemTags() {
+   }
+
+   public static boolean canRagdollOnHit(ItemStack stack) {
+      return stack.is(RAGDOLL_ON_HIT)
+         || stack.getOrDefault(DataComponents.CUSTOM_DATA, CustomData.EMPTY).matchedBy(testMarker());
+   }
+
+   public static void markTestItem(ItemStack stack) {
+      CustomData.update(DataComponents.CUSTOM_DATA, stack, tag -> tag.putBoolean(TEST_MARKER_KEY, true));
+   }
+
+   private static CompoundTag testMarker() {
+      CompoundTag tag = new CompoundTag();
+      tag.putBoolean(TEST_MARKER_KEY, true);
+      return tag;
+   }
+}
