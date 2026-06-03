@@ -8,6 +8,7 @@
   "sable_player_ragdoll.configuration.cooldown_ticks": "Cooldown Ticks",
   "sable_player_ragdoll.configuration.affect_creative": "Affect Creative Players",
   "sable_player_ragdoll.configuration.auto_seat_on_trigger": "Auto Seat Player",
+  "sable_player_ragdoll.configuration.allow_manual_trigger": "Allow Manual Ragdoll",
   "sable_player_ragdoll.configuration.physics": "Physics",
   "sable_player_ragdoll.configuration.max_velocity_delta": "Max Velocity Delta",
   "sable_player_ragdoll.configuration.max_fling_speed": "Max Fling Speed",

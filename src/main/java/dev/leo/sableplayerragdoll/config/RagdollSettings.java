@@ -15,6 +15,7 @@ public final class RagdollSettings {
    private static int cooldownTicks = 60;
    private static boolean affectCreative = true;
    private static boolean autoSeatOnTrigger = true;
+   private static boolean allowManualTrigger = true;
    private static boolean debugLogging = true;
 
    private RagdollSettings() {
@@ -61,6 +62,9 @@ public final class RagdollSettings {
 
    public static boolean autoSeatOnTrigger() { return autoSeatOnTrigger; }
    public static void setAutoSeatOnTrigger(boolean v) { autoSeatOnTrigger = v; }
+
+   public static boolean allowManualTrigger() { return allowManualTrigger; }
+   public static void setAllowManualTrigger(boolean v) { allowManualTrigger = v; }
 
    public static boolean debugLogging() { return debugLogging; }
    public static void setDebugLogging(boolean v) { debugLogging = v; }

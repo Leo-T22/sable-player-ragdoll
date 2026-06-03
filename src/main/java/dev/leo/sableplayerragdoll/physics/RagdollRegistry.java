@@ -113,6 +113,12 @@ public final class RagdollRegistry {
    // Manual keybind trigger (sent from client). Uses player's current movement as launch velocity.
    public static boolean triggerManual(ServerPlayer player) {
       if (!RagdollSettings.enabled()) return false;
+      if (!RagdollSettings.allowManualTrigger()) {
+         if (RagdollSettings.debugLogging()) {
+            SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] manual ragdoll ignored for {} (manual trigger disabled)", player.getGameProfile().getName());
+         }
+         return false;
+      }
       ServerLevel level = player.serverLevel();
       long gameTime = level.getGameTime();
       if (!canTarget(player, gameTime, true)) {

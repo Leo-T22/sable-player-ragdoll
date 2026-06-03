@@ -31,6 +31,9 @@ public final class RagdollConfig {
    public static final BooleanValue AUTO_SEAT_ON_TRIGGER = BUILDER.translation("sable_player_ragdoll.configuration.auto_seat_on_trigger")
       .comment("Seat the player on the ragdoll automatically after launch.")
       .define("autoSeatOnTrigger", true);
+   public static final BooleanValue ALLOW_MANUAL_TRIGGER = BUILDER.translation("sable_player_ragdoll.configuration.allow_manual_trigger")
+      .comment("Allow players to trigger their own ragdoll with the client keybind.")
+      .define("allowManualTrigger", true);
 
    static {
       BUILDER.pop();
@@ -109,6 +112,7 @@ public final class RagdollConfig {
       RagdollSettings.setMaxFlingSpeed((Double) MAX_FLING_SPEED.get());
       RagdollSettings.setRagdollMaxLaunchSpeed((Double) RAGDOLL_MAX_LAUNCH_SPEED.get());
       RagdollSettings.setAutoSeatOnTrigger((Boolean) AUTO_SEAT_ON_TRIGGER.get());
+      RagdollSettings.setAllowManualTrigger((Boolean) ALLOW_MANUAL_TRIGGER.get());
       RagdollSettings.setExpireAfterDuration((Boolean) EXPIRE_AFTER_DURATION.get());
       RagdollSettings.setRagdollDurationTicks((Integer) RAGDOLL_DURATION_TICKS.get());
       RagdollSettings.setExpireWhenSlow((Boolean) EXPIRE_WHEN_SLOW.get());
