@@ -41,9 +41,9 @@ import org.joml.Vector3d;
 public final class RagdollAssemblyHelper {
    private static final double NECK_TORSO_Y = 0.83;
    private static final double NECK_HEAD_Y = 0.23;
-   private static final double SHOULDER_Y = 0.7;
-   private static final double ARM_SHOULDER_Y = 0.12;
-   private static final double HIP_TORSO_Y = 0.2;
+   private static final double SHOULDER_Y = 0.8;
+   private static final double ARM_SHOULDER_Y = 0.27;
+   private static final double HIP_TORSO_Y = 0.1;
    private static final double HIP_LEG_Y = 0.8;
    private static final double HALF_TURN = Math.PI;
    private static final double LEFT_ARM_ROLL = -Math.PI;
@@ -306,7 +306,7 @@ public final class RagdollAssemblyHelper {
       double limbScale = anchorAtLimbCenter ? 0.0 : 0.5;
       double sideOffset = limb.sideOffset() - torso.sideOffset();
       double torsoX = 0.5 + sideOffset * torsoScale;
-      double limbX = 0.5 - sideOffset * limbScale;
+      double limbX = 0.44 - sideOffset * limbScale;
       return attach(physicsSystem, torso, limb, plotAnchor(torso, torsoX, torsoY, 0.5), plotAnchor(limb, limbX, limbY, 0.5), LIMB_ANGULAR_STIFFNESS, LIMB_ANGULAR_DAMPING, name);
    }
 

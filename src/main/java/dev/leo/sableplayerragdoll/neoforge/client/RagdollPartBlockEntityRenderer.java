@@ -61,7 +61,13 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       poseStack.pushPose();
       poseStack.translate(0.5F, bodyPart.renderYOffset(), 0.5F);
       poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-      if (isArmPart(bodyPart)) poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+      if (isArmPart(bodyPart)) {
+         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
+         poseStack.translate(-0.12, -0.05 ,0);
+      }
+      if(bodyPart == BodyPart.LEFT_LEG || bodyPart == BodyPart.RIGHT_LEG) poseStack.translate(0.06, 0.155 ,0);
+      if(bodyPart == BodyPart.HEAD) poseStack.translate(0, 0.03 ,0);
+      if(bodyPart == BodyPart.TORSO) poseStack.translate(0, -0.03 ,0);
       float partScale = bodyPart.renderScale();
       poseStack.scale(-partScale, -partScale, partScale);
       this.centerVisiblePart(bodyPart);
@@ -71,6 +77,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
       this.model.renderToBuffer(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
       this.armorLayer.render(poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
+      if(bodyPart == BodyPart.TORSO) poseStack.translate(0, -0.2 ,0);
       this.renderElytra(bodyPart, entity, poseStack, buffer, packedLight, partialTick);
       this.renderHeldItem(blockEntity, entity, poseStack, buffer, packedLight);
       poseStack.popPose();
