@@ -326,14 +326,6 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
          this.serializedName = serializedName;
       }
 
-      public double renderYOffset() {
-         return switch (this) {
-            case HEAD -> 0.0;
-            case TORSO -> 0.65;
-            case LEFT_ARM, RIGHT_ARM, LEFT_LEG, RIGHT_LEG -> 0.45;
-         };
-      }
-
       public float renderScale() {
          return switch (this) {
             case HEAD, TORSO, LEFT_ARM, RIGHT_ARM, LEFT_LEG, RIGHT_LEG -> 0.9375F;

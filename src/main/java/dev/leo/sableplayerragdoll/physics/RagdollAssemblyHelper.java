@@ -42,12 +42,10 @@ public final class RagdollAssemblyHelper {
    private static final double NECK_TORSO_Y = 0.83;
    private static final double NECK_HEAD_Y = 0.23;
    private static final double SHOULDER_Y = 0.8;
-   private static final double ARM_SHOULDER_Y = 0.27;
+   private static final double ARM_SHOULDER_Y = 0.8;
    private static final double HIP_TORSO_Y = 0.1;
    private static final double HIP_LEG_Y = 0.8;
-   private static final double HALF_TURN = Math.PI;
-   private static final double LEFT_ARM_ROLL = -Math.PI;
-   private static final double RIGHT_ARM_ROLL = Math.PI;
+   private static final double ARM_ROLL = 0.0;
    private static final double NECK_ANGULAR_STIFFNESS = 80.0;
    private static final double NECK_ANGULAR_DAMPING = 6.0;
    private static final double LIMB_ANGULAR_STIFFNESS = 35.0;
@@ -55,10 +53,10 @@ public final class RagdollAssemblyHelper {
    private static final PartSpawn[] PARTS = new PartSpawn[]{
       new PartSpawn("head", BodyPart.HEAD, 0.0, 1.7125, 0.0, 0.0),
       new PartSpawn("torso", BodyPart.TORSO, 0.0, 1.05, 0.0, 0.0),
-      new PartSpawn("left_arm", BodyPart.LEFT_ARM, -0.36, 1.46, HALF_TURN, LEFT_ARM_ROLL),
-      new PartSpawn("right_arm", BodyPart.RIGHT_ARM, 0.36, 1.46, 0.0, RIGHT_ARM_ROLL),
-      new PartSpawn("left_leg", BodyPart.LEFT_LEG, -0.16, 0.5125, 0.0, 0.0),
-      new PartSpawn("right_leg", BodyPart.RIGHT_LEG, 0.16, 0.5125, 0.0, 0.0)
+      new PartSpawn("left_arm", BodyPart.LEFT_ARM, 0.36, 1.46, 0.0, ARM_ROLL),
+      new PartSpawn("right_arm", BodyPart.RIGHT_ARM, -0.36, 1.46, 0.0, ARM_ROLL),
+      new PartSpawn("left_leg", BodyPart.LEFT_LEG, 0.12, 0.5125, 0.0, 0.0),
+      new PartSpawn("right_leg", BodyPart.RIGHT_LEG, -0.12, 0.5125, 0.0, 0.0)
    };
    private static final List<PhysicsConstraintHandle> ACTIVE_CONSTRAINTS = new ArrayList<>();
    private static final Map<UUID, List<UUID>> DOLL_PARTS_BY_HEAD = new ConcurrentHashMap<>();

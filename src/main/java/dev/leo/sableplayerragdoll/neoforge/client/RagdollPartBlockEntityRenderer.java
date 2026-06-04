@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.model.geom.ModelLayers;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -57,34 +58,31 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       BodyPart bodyPart = blockEntity.bodyPart();
       PlayerSkin skin = this.skin(blockEntity);
       this.model = skin.model() == PlayerSkin.Model.SLIM ? this.slimModel : this.defaultModel;
-      this.showOnly(bodyPart);
-      poseStack.pushPose();
-      poseStack.translate(0.5F, bodyPart.renderYOffset(), 0.5F);
-      poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-      if (isArmPart(bodyPart)) {
-         poseStack.mulPose(Axis.ZP.rotationDegrees(180.0F));
-         poseStack.translate(-0.12, -0.05 ,0);
-      }
-      if(bodyPart == BodyPart.LEFT_LEG || bodyPart == BodyPart.RIGHT_LEG) poseStack.translate(0.06, 0.155 ,0);
-      if(bodyPart == BodyPart.HEAD) poseStack.translate(0, 0.03 ,0);
-      if(bodyPart == BodyPart.TORSO) poseStack.translate(0, -0.03 ,0);
-      float partScale = bodyPart.renderScale();
-      poseStack.scale(-partScale, -partScale, partScale);
-      this.centerVisiblePart(bodyPart);
-      RagdollDollEntity entity = this.renderEntity(blockEntity);
       this.currentArmorPart = bodyPart;
       this.currentTexture = skin.texture();
-      VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
-      this.model.renderToBuffer(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
-      this.armorLayer.render(poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
-      if(bodyPart == BodyPart.TORSO) poseStack.translate(0, -0.2 ,0);
-      this.renderElytra(bodyPart, entity, poseStack, buffer, packedLight, partialTick);
-      this.renderHeldItem(blockEntity, entity, poseStack, buffer, packedLight);
+      this.showOnly(bodyPart);
+      RagdollDollEntity entity = this.renderEntity(blockEntity);
+
+      poseStack.pushPose();
+      this.positionPart(bodyPart, poseStack);
+      this.renderLayers(blockEntity, bodyPart, entity, poseStack, buffer, packedLight, partialTick);
       poseStack.popPose();
    }
 
-   private static boolean isArmPart(BodyPart bodyPart) {
-      return bodyPart == BodyPart.LEFT_ARM || bodyPart == BodyPart.RIGHT_ARM;
+   private void positionPart(BodyPart bodyPart, PoseStack poseStack) {
+      poseStack.translate(0.5F, 0.5F, 0.5F);
+      poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+      float partScale = bodyPart.renderScale();
+      poseStack.scale(-partScale, -partScale, partScale);
+      this.centerVisiblePart(bodyPart, poseStack);
+   }
+
+   private void renderLayers(RagdollPartBlockEntity blockEntity, BodyPart bodyPart, RagdollDollEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
+      VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
+      this.model.renderToBuffer(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+      this.armorLayer.render(poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
+      this.renderElytra(bodyPart, entity, poseStack, buffer, packedLight, partialTick);
+      this.renderHeldItem(blockEntity, entity, poseStack, buffer, packedLight);
    }
 
    private void renderElytra(BodyPart bodyPart, RagdollDollEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
@@ -148,7 +146,6 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
 
    private void showOnly(BodyPart bodyPart) {
       this.model.setAllVisible(false);
-      this.resetPartPositions();
       this.model.young = false;
       this.model.crouching = false;
       switch (bodyPart) {
@@ -161,30 +158,34 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       }
    }
 
-   private void centerVisiblePart(BodyPart bodyPart) {
+   private void centerVisiblePart(BodyPart bodyPart, PoseStack poseStack) {
+      ModelPart part = this.visiblePart(bodyPart);
+      poseStack.translate(-part.x / 16.0F, -part.y / 16.0F, -part.z / 16.0F);
+      // Per-part corrections, in pixels (1/16 block) like the pivot above.
       switch (bodyPart) {
-         case HEAD -> { this.model.head.y = -4.0F; this.model.hat.y = -4.0F; }
-         case LEFT_ARM -> { this.model.leftArm.x = -2.0F; this.model.leftArm.y = -4.0F; this.model.leftSleeve.x = -2.0F; this.model.leftSleeve.y = -4.0F; }
-         case RIGHT_ARM -> { this.model.rightArm.x = 0.0F; this.model.rightArm.y = -4.0F; this.model.rightSleeve.x = 0.0F; this.model.rightSleeve.y = -4.0F; }
-         case LEFT_LEG -> { this.model.leftLeg.x = 0.0F; this.model.leftLeg.y = -4.0F; this.model.leftPants.x = 0.0F; this.model.leftPants.y = -4.0F; }
-         case RIGHT_LEG -> { this.model.rightLeg.x = 0.0F; this.model.rightLeg.y = -4.0F; this.model.rightPants.x = 0.0F; this.model.rightPants.y = -4.0F; }
-         default -> { this.model.body.y = -4.0F; this.model.jacket.y = -4.0F; }
+         case HEAD -> nudge(poseStack, 0.0F, 4.0F, 0.0F);
+         case TORSO -> nudge(poseStack, 0.0F, -6.5F, 0.0F);
+         case LEFT_ARM -> nudge(poseStack, -2.0F, -4.0F, 0.0F);
+         case RIGHT_ARM -> nudge(poseStack, 0.0F, -4.0F, 0.0F);
+         case LEFT_LEG -> nudge(poseStack, -1.0F, -6.0F, 0.0F);
+         case RIGHT_LEG -> nudge(poseStack, -1.0F, -6.0F, 0.0F);
       }
    }
 
-   private void resetPartPositions() {
-      this.model.head.x = 0.0F; this.model.head.y = 0.0F;
-      this.model.hat.x = 0.0F; this.model.hat.y = 0.0F;
-      this.model.body.x = 0.0F; this.model.body.y = 0.0F;
-      this.model.jacket.x = 0.0F; this.model.jacket.y = 0.0F;
-      this.model.leftArm.x = 5.0F; this.model.leftArm.y = 2.0F;
-      this.model.leftSleeve.x = 5.0F; this.model.leftSleeve.y = 2.0F;
-      this.model.rightArm.x = -5.0F; this.model.rightArm.y = 2.0F;
-      this.model.rightSleeve.x = -5.0F; this.model.rightSleeve.y = 2.0F;
-      this.model.leftLeg.x = 1.9F; this.model.leftLeg.y = 12.0F;
-      this.model.leftPants.x = 1.9F; this.model.leftPants.y = 12.0F;
-      this.model.rightLeg.x = -1.9F; this.model.rightLeg.y = 12.0F;
-      this.model.rightPants.x = -1.9F; this.model.rightPants.y = 12.0F;
+   // Per-part offset in pixels (1/16 of a block).
+   private static void nudge(PoseStack poseStack, float xPixels, float yPixels, float zPixels) {
+      poseStack.translate(xPixels / 16.0F, yPixels / 16.0F, zPixels / 16.0F);
+   }
+
+   private ModelPart visiblePart(BodyPart bodyPart) {
+      return switch (bodyPart) {
+         case HEAD -> this.model.head;
+         case LEFT_ARM -> this.model.leftArm;
+         case RIGHT_ARM -> this.model.rightArm;
+         case LEFT_LEG -> this.model.leftLeg;
+         case RIGHT_LEG -> this.model.rightLeg;
+         case TORSO -> this.model.body;
+      };
    }
 
    private final class RagdollArmorLayer extends HumanoidArmorLayer<RagdollDollEntity, PlayerModel<RagdollDollEntity>, HumanoidModel<RagdollDollEntity>> {
