@@ -12,17 +12,23 @@ import org.jetbrains.annotations.Nullable;
 
 public final class RagdollKeybindExample {
 
+   private static final double TICKS_TO_METRES_PER_SECOND = 20.0;
    private static final double UPWARD_KICK = 5.0;
 
    private RagdollKeybindExample() {
    }
 
    @Nullable
-   public static RagdollSession launch(ServerPlayer player, Vec3 velocity) {
-      Vec3 launchVelocity = player.isFallFlying() ? velocity : velocity.add(0, UPWARD_KICK, 0);
-      RagdollLimbOptions pose = player.isFallFlying() ? elytraPose() : onFootPose();
-      RagdollLaunchOptions options = RagdollLaunchOptions.builder().limbs(pose).build();
-      return RagdollAPI.launch(player, launchVelocity, options);
+   public static RagdollSession launch(ServerPlayer player) {
+      if (player.isFallFlying()) {
+         Vec3 velocity = player.getDeltaMovement().scale(TICKS_TO_METRES_PER_SECOND);
+         return RagdollAPI.launch(player, velocity, RagdollLaunchOptions.builder().limbs(elytraPose()).build());
+      }
+
+      Vec3 horizontal = player.getKnownMovement().scale(TICKS_TO_METRES_PER_SECOND);
+      double verticalVelocity = player.getKnownMovement().y * TICKS_TO_METRES_PER_SECOND;
+      Vec3 velocity = new Vec3(horizontal.x, Math.max(verticalVelocity, UPWARD_KICK), horizontal.z);
+      return RagdollAPI.launch(player, velocity, RagdollLaunchOptions.builder().limbs(onFootPose()).build());
    }
 
    private static RagdollLimbOptions onFootPose() {

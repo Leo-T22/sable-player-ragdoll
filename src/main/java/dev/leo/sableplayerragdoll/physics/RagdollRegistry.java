@@ -155,17 +155,10 @@ public final class RagdollRegistry {
          SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] manual ragdoll ignored for {} (not a valid target)", player.getGameProfile().getName());
          return false;
       }
-
-      boolean elytraPose = player.isFallFlying();
-      Vec3 deltaMovement = player.getDeltaMovement();
-      Vec3 knownMovement = player.getKnownMovement();
-      Vector3d linear = elytraPose
-         ? clampRagdollLaunchVelocity(toMetersPerSecond(deltaMovement))
-         : clampRagdollLaunchVelocity(toMetersPerSecond(new Vec3(knownMovement.x, 0, knownMovement.z)));
-      boolean launched = RagdollKeybindExample.launch(player, new Vec3(linear.x, linear.y, linear.z)) != null;
+      boolean launched = RagdollKeybindExample.launch(player) != null;
       if (launched) {
-         SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] manual ragdoll for {} launch={} m/s",
-            player.getGameProfile().getName(), fmtVec3dc(linear));
+         SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] manual ragdoll triggered for {}",
+            player.getGameProfile().getName());
       }
       return launched;
    }
