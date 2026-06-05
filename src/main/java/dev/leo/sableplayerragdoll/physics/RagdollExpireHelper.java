@@ -4,6 +4,7 @@ import dev.leo.sableplayerragdoll.RagdollSeatCallbacks;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.api.RagdollEndEvent;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
+import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -103,7 +104,7 @@ public final class RagdollExpireHelper {
    private static Vec3 releasePosition(ServerLevel level, ServerSubLevel headSubLevel) {
       ServerSubLevel source = torsoPart(level, headSubLevel);
       if (source.getPlot() == null) return null;
-      return source.logicalPose().transformPosition(Vec3.atCenterOf(source.getPlot().getCenterBlock())).add(0.0, 0.5, 0.0);
+      return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(source.getPlot().getCenterBlock())).add(0.0, 0.5, 0.0);
    }
 
    @Nullable
