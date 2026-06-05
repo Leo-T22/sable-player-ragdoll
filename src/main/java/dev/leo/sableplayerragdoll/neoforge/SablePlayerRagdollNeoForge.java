@@ -28,6 +28,7 @@ import dev.leo.sableplayerragdoll.physics.RagdollExpireHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollRegistry;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import dev.ryanhcode.sable.Sable;
+import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
@@ -236,6 +237,15 @@ public final class SablePlayerRagdollNeoForge {
                         firstProfile(GameProfileArgument.getGameProfiles(context.context(), "profile")),
                         context.rule()
                      )))
+                     .then(Commands.literal("elytra")
+                        .executes(context -> spawnDummyRagdoll(
+                           context.getSource(),
+                           context.getSource().getPosition(),
+                           context.getSource().getRotation().y,
+                           firstProfile(GameProfileArgument.getGameProfiles(context, "profile")),
+                           true
+                        ))
+                     )
                      .then(Commands.argument("pos", Vec3Argument.vec3())
                         .then(Commands.argument("heading", DoubleArgumentType.doubleArg())
                            .executes(context -> spawnDummyRagdoll(
@@ -293,6 +303,24 @@ public final class SablePlayerRagdollNeoForge {
       GameProfile skinProfile = resolveSkinProfile(source, profile);
       PlayerlessRagdollSession session = RagdollAPI.spawnPlayerless(source.getLevel(), position, headingDegrees, skinProfile, Vec3.ZERO, despawnRule);
       return finishDummySpawn(source, session);
+   }
+
+   private static int spawnDummyRagdoll(CommandSourceStack source, Vec3 position, double headingDegrees, GameProfile profile, boolean withElytra) {
+      GameProfile skinProfile = resolveSkinProfile(source, profile);
+      PlayerlessRagdollSession session = RagdollAPI.spawnPlayerless(source.getLevel(), position, headingDegrees, skinProfile, Vec3.ZERO, PlayerlessDespawnRule.defaultRule());
+      if (withElytra) equipTorso(source.getLevel(), session, new ItemStack(Items.ELYTRA));
+      return finishDummySpawn(source, session);
+   }
+
+   private static void equipTorso(ServerLevel level, PlayerlessRagdollSession session, ItemStack stack) {
+      if (session == null) return;
+      java.util.UUID torsoId = RagdollAssemblyHelper.linkedTorso(session.id());
+      if (torsoId == null) return;
+      SubLevel torsoSubLevel = SubLevelContainer.getContainer(level).getSubLevel(torsoId);
+      if (torsoSubLevel == null) return;
+      if (torsoSubLevel.getLevel().getBlockEntity(torsoSubLevel.getPlot().getCenterBlock()) instanceof RagdollPartBlockEntity part) {
+         part.setItemForSlot(net.minecraft.world.entity.EquipmentSlot.CHEST, stack);
+      }
    }
 
    private static GameProfile firstProfile(Collection<GameProfile> profiles) {

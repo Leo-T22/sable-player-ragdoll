@@ -180,6 +180,19 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       return profile;
    }
 
+   public void setItemForSlot(EquipmentSlot slot, ItemStack stack) {
+      switch (slot) {
+         case MAINHAND -> this.mainHandItem = stack.copy();
+         case OFFHAND -> this.offHandItem = stack.copy();
+         case HEAD -> this.headItem = stack.copy();
+         case CHEST -> this.chestItem = stack.copy();
+         case LEGS -> this.legsItem = stack.copy();
+         case FEET -> this.feetItem = stack.copy();
+         default -> { return; }
+      }
+      this.setChanged();
+   }
+
    public ItemStack itemBySlot(EquipmentSlot slot) {
       return switch (slot) {
          case MAINHAND -> this.mainHandItem;
