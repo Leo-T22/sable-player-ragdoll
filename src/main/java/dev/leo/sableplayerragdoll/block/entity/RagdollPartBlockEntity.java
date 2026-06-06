@@ -102,10 +102,10 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    @Override
    public void sable$physicsTick(ServerSubLevel subLevel, RigidBodyHandle handle, double timeStep) {
-      this.checkGrabbers();
       if (this.bodyPart == BodyPart.HEAD && subLevel.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
          RagdollRegistry.tryRestoreOnLoad(serverLevel, subLevel);
       }
+      this.checkGrabbers();
 
       for (GrabConstraint constraint : this.grabbers.values()) {
          constraint.physicsTick(subLevel);

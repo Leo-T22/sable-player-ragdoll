@@ -221,7 +221,7 @@ public final class RagdollAssemblyHelper {
       return headId != null && ELYTRA_HEADS.contains(headId);
    }
 
-   public static int restoreConstraints(ServerLevel level, Map<BodyPart, ServerSubLevel> subLevels) {
+   public static @Nullable PhysicsConstraintHandle restoreConstraints(ServerLevel level, Map<BodyPart, ServerSubLevel> subLevels, RagdollLimbOptions limbs) {
       Map<BodyPart, SpawnedPart> parts = new EnumMap<>(BodyPart.class);
       for (PartSpawn part : PARTS) {
          ServerSubLevel subLevel = subLevels.get(part.bodyPart());
@@ -232,10 +232,13 @@ public final class RagdollAssemblyHelper {
 
       ServerSubLevel head = subLevels.get(BodyPart.HEAD);
       if (head == null) {
-         return 0;
+         return null;
       }
 
-      int constraints = attachSpawnedParts(level, parts, false, RagdollLimbOptions.defaults());
+      int prevSize = ACTIVE_CONSTRAINTS.size();
+      attachSpawnedParts(level, parts, false, limbs);
+      PhysicsConstraintHandle representative = ACTIVE_CONSTRAINTS.size() > prevSize ? ACTIVE_CONSTRAINTS.get(prevSize) : null;
+
       List<ServerSubLevel> restoredSubLevels = parts.values().stream().map(SpawnedPart::subLevel).toList();
       UUID headId = head.getUniqueId();
       DOLL_PARTS_BY_HEAD.put(headId, restoredSubLevels.stream().map(ServerSubLevel::getUniqueId).toList());
@@ -244,7 +247,7 @@ public final class RagdollAssemblyHelper {
          BODY_PART_BY_SUBLEVEL.put(partId, bodyPart);
          HEAD_BY_PART.put(partId, headId);
       });
-      return constraints;
+      return representative;
    }
 
    public static double launchVelocityScale(UUID subLevelId) {

@@ -14,6 +14,7 @@ import dev.ryanhcode.sable.companion.math.BoundingBox3i;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
+import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -34,7 +35,7 @@ public final class RagdollRegistry {
    private static final double BLOCKS_PER_TICK_TO_METERS_PER_SECOND = 20.0;
    private static final Set<UUID> RAGDOLL_BODY_IDS = new HashSet<>();
    private static final Map<UUID, Long> PLAYER_COOLDOWNS = new HashMap<>();
-   private static final Set<UUID> RESTORED_HEADS = ConcurrentHashMap.newKeySet();
+   private static final Map<UUID, PhysicsConstraintHandle> RESTORED_HANDLES = new ConcurrentHashMap<>();
    private static boolean loggedFirstTick;
 
    private RagdollRegistry() {
@@ -127,7 +128,7 @@ public final class RagdollRegistry {
       }
 
       RAGDOLL_BODY_IDS.add(ragdollBody.getUniqueId());
-      RagdollSavedData.get(level).saveRagdoll(ragdollBody.getUniqueId(), doll.partSubLevelIds());
+      RagdollSavedData.get(level).saveRagdoll(ragdollBody.getUniqueId(), doll.partSubLevelIds(), limbs);
       RagdollDeferredSync.queuePlayerlessLaunch(ragdollBody, linear, angular, false, despawnRule);
       SablePlayerRagdoll.LOGGER.info(
          "[sable_player_ragdoll] queued playerless ragdoll {} at {} heading={} ({} parts, {} constraints)",
@@ -205,11 +206,13 @@ public final class RagdollRegistry {
 
    public static void tryRestoreOnLoad(ServerLevel level, ServerSubLevel headSubLevel) {
       UUID headId = headSubLevel.getUniqueId();
-      if (RESTORED_HEADS.contains(headId)) {
+      PhysicsConstraintHandle existing = RESTORED_HANDLES.get(headId);
+      if (existing != null && existing.isValid()) {
          return;
       }
 
-      Map<BodyPart, UUID> savedParts = RagdollSavedData.get(level).ragdoll(headId);
+      RagdollSavedData savedData = RagdollSavedData.get(level);
+      Map<BodyPart, UUID> savedParts = savedData.ragdoll(headId);
       if (savedParts.isEmpty()) {
          return;
       }
@@ -229,10 +232,13 @@ public final class RagdollRegistry {
          loadedParts.put(entry.getKey(), serverPart);
       }
 
-      int constraints = RagdollAssemblyHelper.restoreConstraints(level, loadedParts);
-      RESTORED_HEADS.add(headId);
-      SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] restored playerless ragdoll {} ({} parts, {} constraints)",
-         shortId(headId), loadedParts.size(), constraints);
+      RagdollLimbOptions limbs = savedData.ragdollLimbs(headId);
+      PhysicsConstraintHandle representative = RagdollAssemblyHelper.restoreConstraints(level, loadedParts, limbs);
+      if (representative != null) {
+         RESTORED_HANDLES.put(headId, representative);
+      }
+      SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] restored playerless ragdoll {} ({} parts)",
+         shortId(headId), loadedParts.size());
    }
 
    static void dropFailed(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
@@ -263,7 +269,7 @@ public final class RagdollRegistry {
    public static void resetState() {
       RAGDOLL_BODY_IDS.clear();
       PLAYER_COOLDOWNS.clear();
-      RESTORED_HEADS.clear();
+      RESTORED_HANDLES.clear();
    }
 
    private static @Nullable ServerSubLevel assembleRagdollBody(ServerLevel level, ServerPlayer player, Vec3 poseForward, RagdollLimbOptions limbs) {
