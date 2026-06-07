@@ -1,28 +1,28 @@
 {
   "selector": "sable_player_ragdoll:ragdoll_part",
   "properties": {
-    "sable:mass": 2.0,
+    "sable:mass": 1.4,
     "sable:volume": 1.0
   },
   "overrides": {
     "body_part=head": {
-      "sable:mass": 0.5,
+      "sable:mass": 0.35,
       "sable:volume": 0.5
     },
     "body_part=left_arm": {
-      "sable:mass": 1.0,
+      "sable:mass": 0.2,
       "sable:volume": 0.35
     },
     "body_part=right_arm": {
-      "sable:mass": 1.0,
+      "sable:mass": 0.2,
       "sable:volume": 0.35
     },
     "body_part=left_leg": {
-      "sable:mass": 1.5,
+      "sable:mass": 0.45,
       "sable:volume": 0.55
     },
     "body_part=right_leg": {
-      "sable:mass": 1.5,
+      "sable:mass": 0.45,
       "sable:volume": 0.55
     }
   }

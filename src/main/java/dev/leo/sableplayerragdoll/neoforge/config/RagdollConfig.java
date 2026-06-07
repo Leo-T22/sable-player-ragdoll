@@ -93,16 +93,16 @@ public final class RagdollConfig {
 
    public static final DoubleValue MASS_HEAD = BUILDER.translation("sable_player_ragdoll.configuration.mass_head")
       .comment("Mass of the head.")
-      .defineInRange("massHead", 0.5, 0.1, 100.0);
+      .defineInRange("massHead", 0.35, 0.1, 100.0);
    public static final DoubleValue MASS_TORSO = BUILDER.translation("sable_player_ragdoll.configuration.mass_torso")
       .comment("Mass of the torso.")
-      .defineInRange("massTorso", 2.0, 0.1, 100.0);
+      .defineInRange("massTorso", 1.4, 0.1, 100.0);
    public static final DoubleValue MASS_ARM = BUILDER.translation("sable_player_ragdoll.configuration.mass_arm")
       .comment("Mass of each arm.")
-      .defineInRange("massArm", 1.0, 0.1, 100.0);
+      .defineInRange("massArm", 0.2, 0.1, 100.0);
    public static final DoubleValue MASS_LEG = BUILDER.translation("sable_player_ragdoll.configuration.mass_leg")
       .comment("Mass of each leg.")
-      .defineInRange("massLeg", 1.5, 0.1, 100.0);
+      .defineInRange("massLeg", 0.45, 0.1, 100.0);
 
    static {
       BUILDER.pop();
@@ -158,7 +158,7 @@ public final class RagdollConfig {
       applyBodyMasses();
    }
 
-   private static void applyBodyMasses() {
+   public static void applyBodyMasses() {
       ResourceLocation massKey = ResourceLocation.fromNamespaceAndPath("sable", "mass");
       Map<BlockStateConditionSet, Map<ResourceLocation, Object>> overrides = new LinkedHashMap<>();
       overrides.put(conditionSet("body_part=head"),      Map.of(massKey, RagdollSettings.massHead()));

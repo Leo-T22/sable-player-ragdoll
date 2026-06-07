@@ -66,7 +66,12 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
+import net.neoforged.neoforge.event.AddReloadListenerEvent;
+import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.minecraft.server.packs.resources.ResourceManager;
+import net.minecraft.server.packs.resources.SimplePreparableReloadListener;
+import net.minecraft.util.profiling.ProfilerFiller;
 import net.neoforged.neoforge.event.tick.LevelTickEvent.Post;
 import java.util.Collection;
 import java.util.UUID;
@@ -96,7 +101,9 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerDeath);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerLogout);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onRegisterCommands);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerStarted);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerStopped);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onAddReloadListeners);
    }
 
    private static void onLevelTick(Post event) {
@@ -466,6 +473,24 @@ public final class SablePlayerRagdollNeoForge {
       SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
       if (physicsSystem == null) return;
       RagdollExpireHelper.expireImmediate(physicsSystem, level, ragdoll, "player disconnected", true);
+   }
+
+   private static void onServerStarted(ServerStartedEvent event) {
+      RagdollConfig.applyBodyMasses();
+   }
+
+   private static void onAddReloadListeners(AddReloadListenerEvent event) {
+      event.addListener(new SimplePreparableReloadListener<Object>() {
+         @Override
+         protected Object prepare(ResourceManager rm, ProfilerFiller p) {
+            return null;
+         }
+
+         @Override
+         protected void apply(Object result, ResourceManager rm, ProfilerFiller p) {
+            RagdollConfig.applyBodyMasses();
+         }
+      });
    }
 
    private static void onServerStopped(ServerStoppedEvent event) {
