@@ -6,7 +6,10 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [],
   "client": [
-    "HumanoidModelMixin"
+    "HumanoidArmorLayerMixin",
+    "HumanoidModelMixin",
+    "LivingEntityRendererAccessor",
+    "LivingEntityRendererMixin"
   ],
   "server": [],
   "injectors": {

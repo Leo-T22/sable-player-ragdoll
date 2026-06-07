@@ -6,41 +6,50 @@ import com.mojang.math.Axis;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
+import dev.leo.sableplayerragdoll.neoforge.mixin.LivingEntityRendererAccessor;
+import java.util.EnumSet;
+import java.util.Set;
+import java.util.UUID;
+import net.neoforged.fml.ModList;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.model.HumanoidModel;
 import net.minecraft.client.model.PlayerModel;
-import net.minecraft.client.model.geom.EntityModelSet;
 import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
 import net.minecraft.client.renderer.blockentity.BlockEntityRendererProvider;
-import net.minecraft.client.renderer.entity.ItemRenderer;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
-import net.minecraft.client.renderer.entity.layers.ElytraLayer;
-import net.minecraft.client.renderer.entity.layers.HumanoidArmorLayer;
 import net.minecraft.client.renderer.texture.OverlayTexture;
 import net.minecraft.client.resources.DefaultPlayerSkin;
 import net.minecraft.client.resources.PlayerSkin;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EquipmentSlot;
-import net.minecraft.world.entity.HumanoidArm;
-import net.minecraft.world.item.ItemDisplayContext;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.client.renderer.entity.layers.ElytraLayer;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 
 public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer<RagdollPartBlockEntity>, RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> {
+   private static PlayerModel<RagdollDollEntity> activeModel = null;
+   private static BodyPart activeBodyPart = null;
+
+   public static PlayerModel<RagdollDollEntity> currentModel() {
+      return activeModel;
+   }
+
+   public static BodyPart activeBodyPart() {
+      return activeBodyPart;
+   }
+
    private final PlayerModel<RagdollDollEntity> defaultModel;
    private final PlayerModel<RagdollDollEntity> slimModel;
    private PlayerModel<RagdollDollEntity> model;
    private final ModelPart defaultCloak;
    private final ModelPart slimCloak;
-   private final RagdollArmorLayer armorLayer;
    private final ElytraLayer<RagdollDollEntity, PlayerModel<RagdollDollEntity>> elytraLayer;
-   private final ItemRenderer itemRenderer;
    private RagdollDollEntity renderEntity;
-   private BodyPart currentArmorPart = BodyPart.TORSO;
    private ResourceLocation currentTexture = DefaultPlayerSkin.getDefaultTexture();
    private ResourceLocation currentCapeTexture = null;
 
@@ -52,14 +61,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       this.defaultCloak = defaultRoot.getChild("cloak");
       this.slimCloak = slimRoot.getChild("cloak");
       this.model = this.defaultModel;
-      this.armorLayer = new RagdollArmorLayer(
-         this,
-         new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_INNER_ARMOR)),
-         new HumanoidModel<>(context.bakeLayer(ModelLayers.PLAYER_OUTER_ARMOR)),
-         context.getBlockRenderDispatcher().getBlockModelShaper().getModelManager()
-      );
       this.elytraLayer = new RagdollElytraLayer(this, context.getModelSet());
-      this.itemRenderer = context.getItemRenderer();
    }
 
    @Override
@@ -67,16 +69,23 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       BodyPart bodyPart = blockEntity.bodyPart();
       PlayerSkin skin = this.skin(blockEntity);
       this.model = skin.model() == PlayerSkin.Model.SLIM ? this.slimModel : this.defaultModel;
-      this.currentArmorPart = bodyPart;
       this.currentTexture = skin.texture();
       this.currentCapeTexture = skin.capeTexture();
       this.showOnly(bodyPart);
-      RagdollDollEntity entity = this.renderEntity(blockEntity);
+      this.renderEntity(blockEntity); // keep renderEntity up-to-date for elytra/cape
+      LivingEntity entity = this.getRenderEntity(blockEntity);
 
-      poseStack.pushPose();
-      this.positionPart(bodyPart, poseStack);
-      this.renderLayers(blockEntity, bodyPart, entity, poseStack, buffer, packedLight, partialTick);
-      poseStack.popPose();
+      activeModel = this.model;
+      activeBodyPart = bodyPart;
+      try {
+         poseStack.pushPose();
+         this.positionPart(bodyPart, poseStack);
+         this.renderLayers(blockEntity, bodyPart, entity, poseStack, buffer, packedLight, partialTick);
+         poseStack.popPose();
+      } finally {
+         activeModel = null;
+         activeBodyPart = null;
+      }
    }
 
    private void positionPart(BodyPart bodyPart, PoseStack poseStack) {
@@ -87,32 +96,64 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       this.centerVisiblePart(bodyPart, poseStack);
    }
 
-   private void renderLayers(RagdollPartBlockEntity blockEntity, BodyPart bodyPart, RagdollDollEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
+   @SuppressWarnings({"unchecked", "rawtypes"})
+   private void renderLayers(RagdollPartBlockEntity blockEntity, BodyPart bodyPart, LivingEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
+      // Render the base model
       VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
       this.model.renderToBuffer(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
-      this.armorLayer.render(poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
-      this.renderElytra(bodyPart, entity, poseStack, buffer, packedLight, partialTick);
-      this.renderCape(bodyPart, blockEntity, poseStack, buffer, packedLight);
-      this.renderHeldItem(blockEntity, entity, poseStack, buffer, packedLight);
-   }
 
-   private void renderCape(BodyPart bodyPart, RagdollPartBlockEntity blockEntity, PoseStack poseStack, MultiBufferSource buffer, int packedLight) {
-      if (bodyPart != BodyPart.TORSO || this.currentCapeTexture == null) return;
-      if (blockEntity.itemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA)) return;
-      ModelPart cloak = this.model == this.slimModel ? this.slimCloak : this.defaultCloak;
-      cloak.visible = true;
-      poseStack.pushPose();
-      poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-      poseStack.translate(0.0F, 0.0F, -0.125F);
-      poseStack.mulPose(Axis.XP.rotationDegrees(-10.0F));
-      VertexConsumer vertices = buffer.getBuffer(RenderType.entitySolid(this.currentCapeTexture));
-      cloak.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
-      poseStack.popPose();
-   }
+      // Render all vanilla layers from the standard PlayerRenderer
+      Minecraft minecraft = Minecraft.getInstance();
+      boolean slim = this.model == this.slimModel;
+      var playerRenderer = minecraft.getEntityRenderDispatcher().getSkinMap().get(slim ? PlayerSkin.Model.SLIM : PlayerSkin.Model.WIDE);
 
-   private void renderElytra(BodyPart bodyPart, RagdollDollEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
-      if (entity != null && bodyPart == BodyPart.TORSO) {
-         this.elytraLayer.render(poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
+      if (playerRenderer instanceof LivingEntityRendererAccessor accessor) {
+         boolean wasInvisible = entity.isInvisible();
+         entity.setInvisible(false);
+
+         // Only populate slots belonging to this body part leave the rest empty.
+         ItemStack[] oldItems = new ItemStack[EquipmentSlot.values().length];
+         for (EquipmentSlot slot : EquipmentSlot.values()) {
+            oldItems[slot.ordinal()] = entity.getItemBySlot(slot);
+            ItemStack candidate = blockEntity.itemBySlot(slot);
+            ItemStack toShow = slotsForPart(bodyPart).contains(slot) && !isArmorSlotBlockedForPart(bodyPart, slot, candidate)
+               ? candidate : ItemStack.EMPTY;
+            entity.setItemSlot(slot, toShow);
+         }
+
+         try {
+            for (var layer : accessor.getLayers()) {
+               String layerClass = layer.getClass().getName();
+               // Curios handled separately; ElytraLayer handled explicitly below (cape-texture override).
+               if (layerClass.equals("top.theillusivec4.curios.client.render.CuriosLayer")
+                     || layerClass.equals("net.minecraft.client.renderer.entity.layers.ElytraLayer")) {
+                  continue;
+               }
+               try {
+                  ((net.minecraft.client.renderer.entity.layers.RenderLayer) layer).render(
+                     poseStack, buffer, packedLight, entity, 0.0F, 0.0F, partialTick, entity.tickCount + partialTick, 0.0F, 0.0F
+                  );
+               } catch (ClassCastException e) {
+               } catch (Exception e) {
+                  // Swallow other per-layer errors
+               }
+            }
+         } finally {
+            entity.setInvisible(wasInvisible);
+            for (EquipmentSlot slot : EquipmentSlot.values()) {
+               entity.setItemSlot(slot, oldItems[slot.ordinal()]);
+            }
+         }
+      }
+
+      if (bodyPart == BodyPart.TORSO && this.renderEntity != null) {
+         this.elytraLayer.render(poseStack, buffer, packedLight, this.renderEntity, 0.0F, 0.0F, partialTick, 0.0F, 0.0F, 0.0F);
+         this.renderCape(blockEntity, poseStack, buffer, packedLight);
+      }
+
+      // Render Curios items filtered by body part using their slot identifiers.
+      if (ModList.get().isLoaded("curios")) {
+         CuriosRenderHelper.render(bodyPart, entity, this, poseStack, buffer, packedLight, partialTick);
       }
    }
 
@@ -133,6 +174,20 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       return Minecraft.getInstance().getSkinManager().getInsecureSkin(blockEntity.skinProfile());
    }
 
+   private LivingEntity getRenderEntity(RagdollPartBlockEntity blockEntity) {
+      Minecraft minecraft = Minecraft.getInstance();
+      if (minecraft.level != null) {
+         UUID uuid = blockEntity.skinProfile().getId();
+         if (uuid != null) {
+            Player player = minecraft.level.getPlayerByUUID(uuid);
+            if (player != null) {
+               return player;
+            }
+         }
+      }
+      return this.renderEntity(blockEntity);
+   }
+
    private RagdollDollEntity renderEntity(RagdollPartBlockEntity blockEntity) {
       Minecraft minecraft = Minecraft.getInstance();
       if (this.renderEntity == null && minecraft.level != null) {
@@ -150,29 +205,11 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       return this.renderEntity;
    }
 
-   private void renderHeldItem(RagdollPartBlockEntity blockEntity, RagdollDollEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight) {
-      if (entity == null) return;
-      BodyPart bodyPart = blockEntity.bodyPart();
-      boolean left = bodyPart == BodyPart.LEFT_ARM;
-      boolean right = bodyPart == BodyPart.RIGHT_ARM;
-      if (!left && !right) return;
-      ItemStack stack = left ? blockEntity.itemBySlot(EquipmentSlot.OFFHAND) : blockEntity.itemBySlot(EquipmentSlot.MAINHAND);
-      if (stack.isEmpty()) return;
-      HumanoidArm arm = left ? HumanoidArm.LEFT : HumanoidArm.RIGHT;
-      ItemDisplayContext ctx = left ? ItemDisplayContext.THIRD_PERSON_LEFT_HAND : ItemDisplayContext.THIRD_PERSON_RIGHT_HAND;
-      poseStack.pushPose();
-      this.model.translateToHand(arm, poseStack);
-      poseStack.mulPose(Axis.XP.rotationDegrees(-90.0F));
-      poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
-      poseStack.translate((left ? -1.0F : 1.0F) / 16.0F, 0.125F, -0.625F);
-      this.itemRenderer.renderStatic(entity, stack, ctx, left, poseStack, buffer, entity.level(), packedLight, OverlayTexture.NO_OVERLAY, 0);
-      poseStack.popPose();
-   }
-
    private void showOnly(BodyPart bodyPart) {
       this.model.setAllVisible(false);
       this.model.young = false;
       this.model.crouching = false;
+
       switch (bodyPart) {
          case HEAD -> { this.model.head.visible = true; this.model.hat.visible = true; }
          case LEFT_ARM -> { this.model.leftArm.visible = true; this.model.leftSleeve.visible = true; }
@@ -186,7 +223,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
    private void centerVisiblePart(BodyPart bodyPart, PoseStack poseStack) {
       ModelPart part = this.visiblePart(bodyPart);
       poseStack.translate(-part.x / 16.0F, -part.y / 16.0F, -part.z / 16.0F);
-      // Per-part corrections, in pixels (1/16 block) like the pivot above.
+            // Per-part corrections, in pixels (1/16 block) like the pivot above.
       switch (bodyPart) {
          case HEAD -> nudge(poseStack, 0.0F, 4.0F, 0.0F);
          case TORSO -> nudge(poseStack, 0.0F, -6.5F, 0.0F);
@@ -213,33 +250,45 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       };
    }
 
+   private static Set<EquipmentSlot> slotsForPart(BodyPart bodyPart) {
+      return switch (bodyPart) {
+         case HEAD      -> EnumSet.of(EquipmentSlot.HEAD);
+         case TORSO     -> EnumSet.of(EquipmentSlot.CHEST, EquipmentSlot.LEGS);
+         case RIGHT_ARM -> EnumSet.of(EquipmentSlot.MAINHAND, EquipmentSlot.CHEST);
+         case LEFT_ARM  -> EnumSet.of(EquipmentSlot.OFFHAND,  EquipmentSlot.CHEST);
+         case LEFT_LEG  -> EnumSet.of(EquipmentSlot.LEGS, EquipmentSlot.FEET);
+         case RIGHT_LEG -> EnumSet.of(EquipmentSlot.LEGS, EquipmentSlot.FEET);
+      };
+   }
+
+   private static boolean isArmorSlotBlockedForPart(BodyPart bodyPart, EquipmentSlot slot, ItemStack item) {
+      if (slot != EquipmentSlot.CHEST) return false;
+      if (bodyPart != BodyPart.LEFT_ARM && bodyPart != BodyPart.RIGHT_ARM) return false;
+      return !(item.getItem() instanceof net.minecraft.world.item.ArmorItem);
+   }
+
+   private void renderCape(RagdollPartBlockEntity blockEntity, PoseStack poseStack, MultiBufferSource buffer, int packedLight) {
+      if (this.currentCapeTexture == null) return;
+      if (blockEntity.itemBySlot(EquipmentSlot.CHEST).is(Items.ELYTRA)) return;
+      ModelPart cloak = this.model == this.slimModel ? this.slimCloak : this.defaultCloak;
+      cloak.visible = true;
+      poseStack.pushPose();
+      poseStack.mulPose(Axis.YP.rotationDegrees(180.0F));
+      poseStack.translate(0.0F, 0.0F, -0.125F);
+      poseStack.mulPose(Axis.XP.rotationDegrees(-10.0F));
+      VertexConsumer vertices = buffer.getBuffer(RenderType.entitySolid(this.currentCapeTexture));
+      cloak.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+      poseStack.popPose();
+   }
+
    private final class RagdollElytraLayer extends ElytraLayer<RagdollDollEntity, PlayerModel<RagdollDollEntity>> {
-      RagdollElytraLayer(RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> renderer, EntityModelSet modelSet) {
+      RagdollElytraLayer(RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> renderer, net.minecraft.client.model.geom.EntityModelSet modelSet) {
          super(renderer, modelSet);
       }
 
       @Override
       public ResourceLocation getElytraTexture(ItemStack stack, RagdollDollEntity entity) {
          return currentCapeTexture != null ? currentCapeTexture : super.getElytraTexture(stack, entity);
-      }
-   }
-
-   private final class RagdollArmorLayer extends HumanoidArmorLayer<RagdollDollEntity, PlayerModel<RagdollDollEntity>, HumanoidModel<RagdollDollEntity>> {
-      RagdollArmorLayer(RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> renderer, HumanoidModel<RagdollDollEntity> innerModel, HumanoidModel<RagdollDollEntity> outerModel, net.minecraft.client.resources.model.ModelManager modelManager) {
-         super(renderer, innerModel, outerModel, modelManager);
-      }
-
-      @Override
-      protected void setPartVisibility(HumanoidModel<RagdollDollEntity> model, EquipmentSlot slot) {
-         model.setAllVisible(false);
-         switch (RagdollPartBlockEntityRenderer.this.currentArmorPart) {
-            case HEAD -> { model.head.visible = slot == EquipmentSlot.HEAD; model.hat.visible = slot == EquipmentSlot.HEAD; }
-            case TORSO -> model.body.visible = slot == EquipmentSlot.CHEST || slot == EquipmentSlot.LEGS;
-            case LEFT_ARM -> model.leftArm.visible = slot == EquipmentSlot.CHEST;
-            case RIGHT_ARM -> model.rightArm.visible = slot == EquipmentSlot.CHEST;
-            case LEFT_LEG -> model.leftLeg.visible = slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET;
-            case RIGHT_LEG -> model.rightLeg.visible = slot == EquipmentSlot.LEGS || slot == EquipmentSlot.FEET;
-         }
       }
    }
 }

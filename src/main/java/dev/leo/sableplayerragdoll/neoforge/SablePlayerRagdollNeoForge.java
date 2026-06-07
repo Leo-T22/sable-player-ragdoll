@@ -60,6 +60,7 @@ import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingEquipmentChangeEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
@@ -91,6 +92,7 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityInteract);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityInteractSpecific);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onAttackEntity);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEquipmentChange);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerDeath);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerLogout);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onRegisterCommands);
@@ -428,6 +430,22 @@ public final class SablePlayerRagdollNeoForge {
    @SuppressWarnings("unchecked")
    private static void registerAttributes(EntityAttributeCreationEvent event) {
       event.put((EntityType<RagdollDollEntity>) RagdollBlockRegistration.RAGDOLL_DOLL_ENTITY.get(), RagdollDollEntity.createAttributes().build());
+   }
+
+   private static void onEquipmentChange(LivingEquipmentChangeEvent event) {
+      if (!(event.getEntity() instanceof ServerPlayer player)) return;
+      ServerLevel level = player.serverLevel();
+      ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
+      if (ragdoll == null) return;
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(ragdoll.getUniqueId())) {
+         SubLevel partSubLevel = SubLevelContainer.getContainer(level).getSubLevel(partId);
+         if (partSubLevel == null) continue;
+         BlockPos pos = partSubLevel.getPlot().getCenterBlock();
+         if (partSubLevel.getLevel().getBlockEntity(pos) instanceof RagdollPartBlockEntity part) {
+            part.setItemForSlot(event.getSlot(), event.getTo());
+            part.getLevel().sendBlockUpdated(pos, part.getBlockState(), part.getBlockState(), 3);
+         }
+      }
    }
 
    private static void onPlayerDeath(LivingDeathEvent event) {
