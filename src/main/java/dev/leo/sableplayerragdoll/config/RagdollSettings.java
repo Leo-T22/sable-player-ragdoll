@@ -18,6 +18,7 @@ public final class RagdollSettings {
    private static boolean allowManualTrigger = true;
    private static int minDismountTicks = 60;
    private static boolean impactDamageEnabled = true;
+   private static double impactFeedbackThreshold = 4.0;
    private static double impactDamageThreshold = 12.0;
    private static double impactDamageMultiplier = 0.75;
    private static double impactDamageMax = 20.0;
@@ -82,6 +83,9 @@ public final class RagdollSettings {
 
    public static boolean impactDamageEnabled() { return impactDamageEnabled; }
    public static void setImpactDamageEnabled(boolean v) { impactDamageEnabled = v; }
+
+   public static double impactFeedbackThreshold() { return impactFeedbackThreshold; }
+   public static void setImpactFeedbackThreshold(double v) { impactFeedbackThreshold = Math.max(0.0, v); }
 
    public static double impactDamageThreshold() { return impactDamageThreshold; }
    public static void setImpactDamageThreshold(double v) { impactDamageThreshold = Math.max(0.0, v); }

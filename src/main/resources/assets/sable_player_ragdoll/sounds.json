@@ -1,0 +1,12 @@
+{
+  "ragdoll_impact": {
+    "sounds": [
+      "sable_player_ragdoll:impact"
+    ]
+  },
+  "ragdoll_small_impact": {
+    "sounds": [
+      "sable_player_ragdoll:small_impact"
+    ]
+  }
+}

@@ -2,8 +2,10 @@ package dev.leo.sableplayerragdoll.physics;
 
 import dev.leo.sableplayerragdoll.api.DespawnCondition;
 import dev.leo.sableplayerragdoll.api.RagdollSession;
+import dev.leo.sableplayerragdoll.RagdollSoundEvents;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
+import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -16,8 +18,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
@@ -144,7 +148,7 @@ public final class RagdollSessionManager {
                      } else if (shouldExpire(level, physicsSystem, serverSubLevel)) {
                         RagdollExpireHelper.expire(physicsSystem, level, serverSubLevel, reasonFor(serverSubLevel, level, physicsSystem));
                      } else {
-                        applyImpactDamage(level, physicsSystem, serverSubLevel);
+                        applyImpactDamage(level, physicsSystem, serverContainer, serverSubLevel);
                      }
                   }
                }
@@ -293,33 +297,95 @@ public final class RagdollSessionManager {
       return handle != null && handle.isValid() ? handle.getLinearVelocity(new Vector3d()) : null;
    }
 
-   private static void applyImpactDamage(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
+   private static void applyImpactDamage(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel headSubLevel) {
       if (!RagdollSettings.impactDamageEnabled()) return;
-      UUID playerId = getPlayerId(subLevel);
+      UUID playerId = getPlayerId(headSubLevel);
       if (playerId == null) return;
       ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
       if (player == null || player.isDeadOrDying() || player.isSpectator()) return;
 
-      UUID subLevelId = subLevel.getUniqueId();
-      Vector3d velocity = sampleVelocityMetersPerSecond(physicsSystem, subLevel);
-      if (velocity == null) return;
-
-      Vector3d previous = LAST_VELOCITIES.put(subLevelId, new Vector3d(velocity));
-      if (previous == null) return;
-
-      double delta = previous.sub(velocity).length();
-      double threshold = RagdollSettings.impactDamageThreshold();
-      if (delta <= threshold) return;
+      ImpactSample impact = sampleLargestLinkedVelocityDelta(level, physicsSystem, serverContainer, headSubLevel);
+      double delta = impact.delta();
+      double feedbackThreshold = Math.min(RagdollSettings.impactFeedbackThreshold(), RagdollSettings.impactDamageThreshold());
+      if (delta <= feedbackThreshold) return;
 
       long gameTime = level.getGameTime();
-      if (gameTime < NEXT_IMPACT_DAMAGE_TICKS.getOrDefault(subLevelId, Long.MIN_VALUE)) return;
+      UUID headSubLevelId = headSubLevel.getUniqueId();
+      if (gameTime < NEXT_IMPACT_DAMAGE_TICKS.getOrDefault(headSubLevelId, Long.MIN_VALUE)) return;
 
-      float damage = (float) Math.min(RagdollSettings.impactDamageMax(), (delta - threshold) * RagdollSettings.impactDamageMultiplier());
-      if (damage <= 0.0F) return;
-
-      if (player.hurt(player.damageSources().flyIntoWall(), damage)) {
-         NEXT_IMPACT_DAMAGE_TICKS.put(subLevelId, gameTime + (long) RagdollSettings.impactDamageCooldownTicks());
+      NEXT_IMPACT_DAMAGE_TICKS.put(headSubLevelId, gameTime + (long) RagdollSettings.impactDamageCooldownTicks());
+      Vec3 position = impact.position();
+      spawnImpactParticles(level, position, delta, feedbackThreshold);
+      double damageThreshold = RagdollSettings.impactDamageThreshold();
+      net.minecraft.sounds.SoundEvent soundEvent = delta > damageThreshold
+         ? RagdollSoundEvents.ragdollImpact()
+         : RagdollSoundEvents.ragdollSmallImpact();
+      if (soundEvent != null) {
+         float volume = impactSoundVolume(delta, feedbackThreshold);
+         float pitch = 0.9F + level.random.nextFloat() * 0.2F;
+         level.playSound(null, position.x, position.y, position.z, soundEvent, SoundSource.PLAYERS, volume, pitch);
       }
+
+      if (delta > damageThreshold) {
+         float damage = (float) Math.min(RagdollSettings.impactDamageMax(), (delta - damageThreshold) * RagdollSettings.impactDamageMultiplier());
+         if (damage > 0.0F) {
+            player.hurt(player.damageSources().flyIntoWall(), damage);
+         }
+      }
+   }
+
+   private static void spawnImpactParticles(ServerLevel level, Vec3 position, double delta, double threshold) {
+      double maxDelta = threshold + RagdollSettings.impactDamageMax() / Math.max(0.001, RagdollSettings.impactDamageMultiplier());
+      double strength = Math.clamp((delta - threshold) / Math.max(0.001, maxDelta - threshold), 0.0, 1.0);
+      int count = 4 + (int) Math.round(strength * 10.0);
+      double spread = 0.36 + strength * 0.24;
+      double speed = 0.06;
+      level.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, position.x, position.y, position.z, count, spread, spread * 0.5, spread, speed);
+   }
+
+   private static float impactSoundVolume(double delta, double threshold) {
+      double maxDelta = threshold + RagdollSettings.impactDamageMax() / Math.max(0.001, RagdollSettings.impactDamageMultiplier());
+      double strength = (delta - threshold) / Math.max(0.001, maxDelta - threshold);
+      return (float) Math.clamp(0.25 + strength * 0.85, 0.25, 1.1);
+   }
+
+   private static ImpactSample sampleLargestLinkedVelocityDelta(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel headSubLevel) {
+      double largestDelta = 0.0;
+      Vec3 impactPosition = worldImpactPosition(level, headSubLevel);
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(headSubLevel.getUniqueId())) {
+         SubLevel part = serverContainer.getSubLevel(partId);
+         if (!(part instanceof ServerSubLevel partSubLevel) || partSubLevel.isRemoved()) {
+            LAST_VELOCITIES.remove(partId);
+            continue;
+         }
+
+         Vector3d velocity = sampleVelocityMetersPerSecond(physicsSystem, partSubLevel);
+         if (velocity == null) {
+            continue;
+         }
+
+         Vector3d previous = LAST_VELOCITIES.put(partId, new Vector3d(velocity));
+         if (previous != null) {
+            double delta = previous.sub(velocity).length();
+            if (delta > largestDelta) {
+               largestDelta = delta;
+               impactPosition = worldImpactPosition(level, partSubLevel);
+            }
+         }
+      }
+      return new ImpactSample(largestDelta, impactPosition);
+   }
+
+   private static Vec3 worldImpactPosition(ServerLevel level, ServerSubLevel subLevel) {
+      if (subLevel.getPlot() == null) {
+         org.joml.Vector3dc position = subLevel.logicalPose().position();
+         return new Vec3(position.x(), position.y(), position.z());
+      }
+
+      return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(subLevel.getPlot().getCenterBlock()));
+   }
+
+   private record ImpactSample(double delta, Vec3 position) {
    }
 
    private record ManagedRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long elapsedTicks, SubLevelPhysicsSystem physicsSystem) implements RagdollSession {

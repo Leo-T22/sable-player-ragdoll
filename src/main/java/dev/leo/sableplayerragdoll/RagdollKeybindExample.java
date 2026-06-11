@@ -42,8 +42,8 @@ public final class RagdollKeybindExample {
 
    private static RagdollLimbOptions elytraPose() {
       return RagdollLimbOptions.builder()
-         .limb(BodyPart.LEFT_ARM, RagdollLimbConfig.builder().stiffness(60).damping(8))
-         .limb(BodyPart.RIGHT_ARM, RagdollLimbConfig.builder().stiffness(60).damping(8))
+         .limb(BodyPart.LEFT_ARM, RagdollLimbConfig.builder().stiffness(15).damping(8))
+         .limb(BodyPart.RIGHT_ARM, RagdollLimbConfig.builder().stiffness(15).damping(8))
          .build();
    }
 }

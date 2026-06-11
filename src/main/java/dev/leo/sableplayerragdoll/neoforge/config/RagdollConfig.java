@@ -70,6 +70,9 @@ public final class RagdollConfig {
    public static final BooleanValue IMPACT_DAMAGE_ENABLED = BUILDER.translation("sable_player_ragdoll.configuration.impact_damage_enabled")
       .comment("Damage ragdolled players when their ragdoll takes a hard impact.")
       .define("impactDamageEnabled", true);
+   public static final DoubleValue IMPACT_FEEDBACK_THRESHOLD = BUILDER.translation("sable_player_ragdoll.configuration.impact_feedback_threshold")
+      .comment("Minimum speed lost in one tick before ragdoll impact sound and dust are played (m/s).")
+      .defineInRange("impactFeedbackThreshold", 4.0, 0.0, 128.0);
    public static final DoubleValue IMPACT_DAMAGE_THRESHOLD = BUILDER.translation("sable_player_ragdoll.configuration.impact_damage_threshold")
       .comment("Minimum speed lost in one tick before ragdoll impact damage is applied (m/s).")
       .defineInRange("impactDamageThreshold", 12.0, 0.0, 128.0);
@@ -163,6 +166,7 @@ public final class RagdollConfig {
       RagdollSettings.setMaxFlingSpeed((Double) MAX_FLING_SPEED.get());
       RagdollSettings.setRagdollMaxLaunchSpeed((Double) RAGDOLL_MAX_LAUNCH_SPEED.get());
       RagdollSettings.setImpactDamageEnabled((Boolean) IMPACT_DAMAGE_ENABLED.get());
+      RagdollSettings.setImpactFeedbackThreshold((Double) IMPACT_FEEDBACK_THRESHOLD.get());
       RagdollSettings.setImpactDamageThreshold((Double) IMPACT_DAMAGE_THRESHOLD.get());
       RagdollSettings.setImpactDamageMultiplier((Double) IMPACT_DAMAGE_MULTIPLIER.get());
       RagdollSettings.setImpactDamageMax((Double) IMPACT_DAMAGE_MAX.get());

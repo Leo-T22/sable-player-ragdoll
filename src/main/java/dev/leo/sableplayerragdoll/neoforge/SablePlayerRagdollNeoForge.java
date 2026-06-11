@@ -9,6 +9,7 @@ import com.mojang.authlib.yggdrasil.ProfileResult;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.RagdollItemTags;
 import dev.leo.sableplayerragdoll.RagdollSeatCallbacks;
+import dev.leo.sableplayerragdoll.RagdollSoundEvents;
 import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
 import dev.leo.sableplayerragdoll.SablePlayerRagdollBootstrap;
 import dev.leo.sableplayerragdoll.api.PlayerlessRagdollSession;
@@ -124,6 +125,8 @@ public final class SablePlayerRagdollNeoForge {
          RagdollPartBlockEntities.bindRagdollPart((BlockEntityType<RagdollPartBlockEntity>) RagdollBlockRegistration.RAGDOLL_PART_BLOCK_ENTITY.get());
          RagdollSeatEntities.bindRagdollSeat((EntityType<RagdollSeatEntity>) RagdollBlockRegistration.RAGDOLL_SEAT_ENTITY.get());
          RagdollSeatEntities.bindRagdollDoll((EntityType<RagdollDollEntity>) RagdollBlockRegistration.RAGDOLL_DOLL_ENTITY.get());
+         RagdollSoundEvents.bindRagdollImpact(RagdollBlockRegistration.RAGDOLL_IMPACT_SOUND.get());
+         RagdollSoundEvents.bindRagdollSmallImpact(RagdollBlockRegistration.RAGDOLL_SMALL_IMPACT_SOUND.get());
          RagdollSeatCallbacks.setOnAutoSeated(RagdollNetworking::notifyAutoSeated);
          RagdollSeatCallbacks.setOnReleased(RagdollNetworking::notifyReleased);
          SablePlayerRagdollBootstrap.init();

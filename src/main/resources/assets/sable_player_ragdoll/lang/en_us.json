@@ -16,6 +16,7 @@
   "sable_player_ragdoll.configuration.ragdoll_max_launch_speed": "Max Launch Speed",
   "sable_player_ragdoll.configuration.impact_damage": "Impact Damage",
   "sable_player_ragdoll.configuration.impact_damage_enabled": "Enable Impact Damage",
+  "sable_player_ragdoll.configuration.impact_feedback_threshold": "Impact Feedback Threshold",
   "sable_player_ragdoll.configuration.impact_damage_threshold": "Impact Damage Threshold",
   "sable_player_ragdoll.configuration.impact_damage_multiplier": "Impact Damage Multiplier",
   "sable_player_ragdoll.configuration.impact_damage_max": "Max Impact Damage",
