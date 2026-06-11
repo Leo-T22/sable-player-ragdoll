@@ -10,6 +10,7 @@ import io.wispforest.accessories.api.client.AccessoryRenderer;
 import io.wispforest.accessories.api.slot.SlotReference;
 import io.wispforest.accessories.api.slot.SlotTypeReference;
 import io.wispforest.accessories.menu.ArmorSlotTypes;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.model.PlayerModel;
@@ -38,6 +39,58 @@ final class AccessoriesRenderHelper {
         Map.entry("wrist",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM))
     );
 
+    //f irst match wins.
+    private record KeywordRule(String keyword, Set<BodyPart> parts) {}
+    private static final List<KeywordRule> SLOT_KEYWORDS = List.of(
+        // Head
+        new KeywordRule("head",    Set.of(BodyPart.HEAD)),
+        new KeywordRule("hat",     Set.of(BodyPart.HEAD)),
+        new KeywordRule("helmet",  Set.of(BodyPart.HEAD)),
+        new KeywordRule("hair",    Set.of(BodyPart.HEAD)),
+        new KeywordRule("mask",    Set.of(BodyPart.HEAD)),
+        new KeywordRule("face",    Set.of(BodyPart.HEAD)),
+        new KeywordRule("goggle",  Set.of(BodyPart.HEAD)),
+        new KeywordRule("glass",   Set.of(BodyPart.HEAD)),
+        // Arms
+        new KeywordRule("hand",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("glove",   Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("gauntlet",Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("ring",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("bracelet",Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("wrist",   Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        new KeywordRule("bracer",  Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        // Legs / feet
+        new KeywordRule("boot",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("shoe",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("sock",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("feet",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("foot",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("anklet",  Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("ankle",   Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("leg",     Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        new KeywordRule("shin",    Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG)),
+        // Torso
+        new KeywordRule("back",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("pack",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("bag",     Set.of(BodyPart.TORSO)),
+        new KeywordRule("satchel", Set.of(BodyPart.TORSO)),
+        new KeywordRule("pouch",   Set.of(BodyPart.TORSO)),
+        new KeywordRule("tank",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("cape",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("cloak",   Set.of(BodyPart.TORSO)),
+        new KeywordRule("wing",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("elytra",  Set.of(BodyPart.TORSO)),
+        new KeywordRule("chest",   Set.of(BodyPart.TORSO)),
+        new KeywordRule("body",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("torso",   Set.of(BodyPart.TORSO)),
+        new KeywordRule("neck",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("collar",  Set.of(BodyPart.TORSO)),
+        new KeywordRule("necklace",Set.of(BodyPart.TORSO)),
+        new KeywordRule("pendant", Set.of(BodyPart.TORSO)),
+        new KeywordRule("belt",    Set.of(BodyPart.TORSO)),
+        new KeywordRule("waist",   Set.of(BodyPart.TORSO))
+    );
+
     private AccessoriesRenderHelper() {}
 
     @Nullable
@@ -57,12 +110,21 @@ final class AccessoriesRenderHelper {
         return cosmetic.isEmpty() ? null : cosmetic;
     }
 
+    private static Set<BodyPart> resolveSlot(String slotName) {
+        Set<BodyPart> exact = SLOT_BODY_PARTS.get(slotName);
+        if (exact != null) return exact;
+        String lower = slotName.toLowerCase();
+        for (KeywordRule rule : SLOT_KEYWORDS) {
+            if (lower.contains(rule.keyword())) return rule.parts();
+        }
+        return Set.of(BodyPart.TORSO); // unknown → torso fallback
+    }
+
     private static boolean slotIndexBelongsToPart(String slotName, int index, BodyPart bodyPart) {
         if (SPLIT_ARM_SLOTS.contains(slotName)) {
             return bodyPart == ((index % 2 == 0) ? BodyPart.RIGHT_ARM : BodyPart.LEFT_ARM);
         }
-        Set<BodyPart> parts = SLOT_BODY_PARTS.get(slotName);
-        return parts == null ? bodyPart == BodyPart.TORSO : parts.contains(bodyPart);
+        return resolveSlot(slotName).contains(bodyPart);
     }
 
     @Nullable

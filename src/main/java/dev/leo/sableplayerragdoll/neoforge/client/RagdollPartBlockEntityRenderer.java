@@ -127,6 +127,18 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
             entity.setItemSlot(slot, toShow);
          }
 
+         // Displace all model parts that don't belong to this block
+         ModelPart[] allMainParts = {
+            this.model.head, this.model.body,
+            this.model.leftArm, this.model.rightArm,
+            this.model.leftLeg, this.model.rightLeg
+         };
+         float[] savedPartY = new float[allMainParts.length];
+         for (int j = 0; j < allMainParts.length; j++) {
+            savedPartY[j] = allMainParts[j].y;
+            if (allMainParts[j] != currentPart) allMainParts[j].y += 10000f;
+         }
+
          try {
             for (var layer : accessor.getLayers()) {
                String layerClass = layer.getClass().getName();
@@ -152,6 +164,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
                }
             }
          } finally {
+            for (int j = 0; j < allMainParts.length; j++) allMainParts[j].y = savedPartY[j];
             entity.setInvisible(wasInvisible);
             for (EquipmentSlot slot : EquipmentSlot.values()) {
                entity.setItemSlot(slot, oldItems[slot.ordinal()]);
