@@ -74,6 +74,15 @@ public final class RagdollDeferredSync {
             if (entry.getValue().level() != physicsSystem.getLevel()) continue;
             if (serverContainer.getSubLevel(entry.getKey()) instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved()) {
                PendingLaunch launch = entry.getValue();
+               if (launch.seatEntityId() != null && !isSeatEntityLaunchable(physicsSystem.getLevel(), launch.seatEntityId())) {
+                  SablePlayerRagdoll.LOGGER.info(
+                     "[sable_player_ragdoll] dropping queued ragdoll {} — seat entity died or left before launch",
+                     RagdollRegistry.shortId(serverSubLevel.getUniqueId())
+                  );
+                  RagdollRegistry.dropFailed(physicsSystem, serverSubLevel);
+                  iterator.remove();
+                  continue;
+               }
                try {
                   RagdollRegistry.wakePhysicsBody(physicsSystem, serverSubLevel);
                   physicsSystem.getPipeline().onStatsChanged(serverSubLevel);
@@ -108,6 +117,14 @@ public final class RagdollDeferredSync {
             iterator.remove();
          }
       }
+   }
+
+   private static boolean isSeatEntityLaunchable(ServerLevel level, UUID seatEntityId) {
+      Entity seatEntity = level.getEntity(seatEntityId);
+      if (seatEntity == null || seatEntity.isRemoved()) {
+         return false;
+      }
+      return !(seatEntity instanceof LivingEntity livingEntity) || !livingEntity.isDeadOrDying();
    }
 
    private static int launchLinkedParts(SubLevelPhysicsSystem physicsSystem, ServerSubLevel rootSubLevel, PendingLaunch launch) {
