@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
@@ -107,6 +108,15 @@ public final class RagdollAPI {
    }
 
    @Nullable
+   public static PlayerlessRagdollSession detachActive(ServerPlayer player, PlayerlessDespawnRule rule) {
+      ServerLevel level = player.serverLevel();
+      PlayerlessDespawnRule resolved = rule != null ? rule : PlayerlessDespawnRule.never();
+      ServerSubLevel body = RagdollRegistry.detachActiveToPlayerless(level, player.getUUID(), resolved);
+      if (body == null) return null;
+      return new ActivePlayerlessRagdollSession(level, body, level.getGameTime());
+   }
+
+   @Nullable
    public static RagdollSession activeSession(ServerPlayer player) {
       ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID());
       if (body == null) return null;
@@ -123,6 +133,31 @@ public final class RagdollAPI {
 
    public static boolean isRagdollSubLevel(SubLevel subLevel) {
       return RagdollAssemblyHelper.isRagdollPart(subLevel.getUniqueId());
+   }
+
+   public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
+      RagdollRegistry.setGrabDisabled(level, subLevelId, disabled);
+   }
+
+   @Nullable
+   public static UUID torsoSubLevelId(UUID headId) {
+      return RagdollAssemblyHelper.linkedTorso(headId);
+   }
+
+   public static void copyEquipmentFrom(ServerLevel level, UUID headId, Player player) {
+      applyEquipmentSnapshot(level, headId, captureEquipment(player, RagdollEquipmentScope.ALL));
+   }
+
+   public static void copyExtraEquipmentFrom(ServerLevel level, UUID headId, Player player) {
+      applyEquipmentSnapshot(level, headId, captureEquipment(player, RagdollEquipmentScope.OPTIONAL_MODS));
+   }
+
+   public static RagdollEquipmentSnapshot captureEquipment(Player player, RagdollEquipmentScope scope) {
+      return RagdollRegistry.captureEquipment(player, scope);
+   }
+
+   public static void applyEquipmentSnapshot(ServerLevel level, UUID headId, RagdollEquipmentSnapshot snapshot) {
+      RagdollRegistry.applyEquipmentSnapshot(level, headId, snapshot);
    }
 
    private record ActiveRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long startGameTime, List<DespawnCondition> customConditions)

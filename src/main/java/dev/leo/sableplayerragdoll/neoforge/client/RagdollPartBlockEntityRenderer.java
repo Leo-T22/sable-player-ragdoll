@@ -118,8 +118,8 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
          for (EquipmentSlot slot : EquipmentSlot.values()) {
             oldItems[slot.ordinal()] = entity.getItemBySlot(slot);
             ItemStack candidate = blockEntity.itemBySlot(slot);
-            if (accessoriesLoaded && slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR) {
-               ItemStack cosmetic = AccessoriesRenderHelper.cosmeticArmorOverride(entity, slot);
+            if (accessoriesLoaded && slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && blockEntity.hasAccessoriesItems()) {
+               ItemStack cosmetic = AccessoriesRenderHelper.storedCosmeticArmorOverride(blockEntity, slot);
                if (cosmetic != null) candidate = cosmetic;
             }
             ItemStack toShow = slotsForPart(bodyPart).contains(slot) && !isArmorSlotBlockedForPart(bodyPart, slot, candidate)
@@ -179,9 +179,14 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       }
       
       if (ModList.get().isLoaded("accessories")) {
-         AccessoriesRenderHelper.render(bodyPart, entity, this, poseStack, buffer, packedLight, partialTick);
-      } else if (ModList.get().isLoaded("curios")) {
-         CuriosRenderHelper.render(bodyPart, entity, this, poseStack, buffer, packedLight, partialTick);
+         if (blockEntity.hasAccessoriesItems()) {
+            AccessoriesRenderHelper.renderFromStored(bodyPart, blockEntity.getAccessoriesItems(), entity, this, poseStack, buffer, packedLight, partialTick);
+         }
+      }
+      if (ModList.get().isLoaded("curios")) {
+         if (blockEntity.hasCurioItems()) {
+            CuriosRenderHelper.renderFromStored(bodyPart, blockEntity.getCurioItems(), entity, this, poseStack, buffer, packedLight, partialTick);
+         }
       }
    }
 

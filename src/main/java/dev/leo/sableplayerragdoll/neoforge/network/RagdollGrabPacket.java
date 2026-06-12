@@ -1,6 +1,7 @@
 package dev.leo.sableplayerragdoll.neoforge.network;
 
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
+import dev.leo.sableplayerragdoll.physics.RagdollRegistry;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -43,6 +44,7 @@ public record RagdollGrabPacket(BlockPos pos, boolean release) implements Custom
                removeSlowdown(player);
                PacketDistributor.sendToAllPlayers(new RagdollGrabSyncPacket(player.getUUID(), false), new CustomPacketPayload[0]);
             } else {
+               if (RagdollRegistry.isGrabDisabledAt(player.serverLevel(), packet.pos())) return;
                ragdollPart.startGrab(player.getUUID());
                applySlowdown(player);
                PacketDistributor.sendToAllPlayers(new RagdollGrabSyncPacket(player.getUUID(), true), new CustomPacketPayload[0]);

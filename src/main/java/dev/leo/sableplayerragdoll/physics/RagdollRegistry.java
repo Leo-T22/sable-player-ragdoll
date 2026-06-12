@@ -7,7 +7,10 @@ import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
 import dev.leo.sableplayerragdoll.RagdollKeybindExample;
+import dev.leo.sableplayerragdoll.api.RagdollEquipmentScope;
+import dev.leo.sableplayerragdoll.api.RagdollEquipmentSnapshot;
 import dev.leo.sableplayerragdoll.api.RagdollLimbOptions;
+import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3i;
@@ -141,6 +144,17 @@ public final class RagdollRegistry {
       return ragdollBody;
    }
 
+   @Nullable
+   public static ServerSubLevel detachActiveToPlayerless(ServerLevel level, UUID playerId, PlayerlessDespawnRule rule) {
+      ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(level, playerId);
+      if (body == null) return null;
+      RagdollSessionManager.detachPlayer(body, rule, level.getGameTime());
+      RagdollExpireHelper.unseatPlayerSilently(level, playerId);
+      Map<BodyPart, UUID> partMap = RagdollAssemblyHelper.linkedPartsAsMap(body.getUniqueId());
+      RagdollSavedData.get(level).saveRagdoll(body.getUniqueId(), partMap, RagdollLimbOptions.defaults());
+      return body;
+   }
+
    // Manual keybind trigger (sent from client). Uses player's current movement as launch velocity.
    public static boolean triggerManual(ServerPlayer player) {
       if (!RagdollSettings.enabled()) return false;
@@ -264,6 +278,34 @@ public final class RagdollRegistry {
    static void suppressAfterRelease(UUID playerId, long gameTime) {
       RagdollControlHelper.clearInput(playerId);
       PLAYER_COOLDOWNS.put(playerId, gameTime + (long) RagdollSettings.cooldownTicks());
+   }
+
+   public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
+      SubLevel subLevel = SubLevelContainer.getContainer(level).getSubLevel(subLevelId);
+      if (subLevel instanceof ServerSubLevel ssl) {
+         RagdollSessionManager.setGrabDisabled(ssl, disabled);
+      }
+   }
+
+   public static boolean isGrabDisabledAt(ServerLevel level, BlockPos pos) {
+      SubLevel part = Sable.HELPER.getContaining(level, pos);
+      return part instanceof ServerSubLevel ssl && RagdollSessionManager.isGrabDisabled(ssl);
+   }
+
+   public static void applyEquipmentFrom(ServerLevel level, UUID headId, net.minecraft.world.entity.player.Player player) {
+      RagdollEquipmentHelper.applyFrom(level, headId, player);
+   }
+
+   public static void applyExtraEquipmentFrom(ServerLevel level, UUID headId, net.minecraft.world.entity.player.Player player) {
+      RagdollEquipmentHelper.applyExtraFrom(level, headId, player);
+   }
+
+   public static RagdollEquipmentSnapshot captureEquipment(net.minecraft.world.entity.player.Player player, RagdollEquipmentScope scope) {
+      return RagdollEquipmentHelper.capture(player, scope);
+   }
+
+   public static void applyEquipmentSnapshot(ServerLevel level, UUID headId, RagdollEquipmentSnapshot snapshot) {
+      RagdollEquipmentHelper.applySnapshot(level, headId, snapshot);
    }
 
    public static void resetState() {

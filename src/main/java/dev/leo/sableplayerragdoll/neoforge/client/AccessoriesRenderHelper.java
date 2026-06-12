@@ -3,6 +3,7 @@ package dev.leo.sableplayerragdoll.neoforge.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
+import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import io.wispforest.accessories.api.AccessoriesCapability;
 import io.wispforest.accessories.api.AccessoriesContainer;
 import io.wispforest.accessories.api.client.AccessoriesRendererRegistry;
@@ -94,6 +95,16 @@ final class AccessoriesRenderHelper {
     private AccessoriesRenderHelper() {}
 
     @Nullable
+    static ItemStack storedCosmeticArmorOverride(RagdollPartBlockEntity blockEntity, EquipmentSlot slot) {
+        SlotTypeReference reference = ArmorSlotTypes.getReferenceFromSlot(slot);
+        if (reference == null) return null;
+        List<ItemStack> items = blockEntity.getAccessoriesItems().get(reference.slotName());
+        if (items == null || items.isEmpty()) return null;
+        ItemStack item = items.get(0);
+        return item.isEmpty() ? null : item;
+    }
+
+    @Nullable
     static ItemStack cosmeticArmorOverride(LivingEntity entity, EquipmentSlot slot) {
         AccessoriesCapability cap = AccessoriesCapability.get(entity);
         if (cap == null) return null;
@@ -136,6 +147,48 @@ final class AccessoriesRenderHelper {
             case RIGHT_ARM -> model.leftArm;
             default -> null;
         };
+    }
+
+    static void renderFromStored(
+        BodyPart bodyPart,
+        Map<String, List<ItemStack>> accessoriesItems,
+        LivingEntity entity,
+        RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> parent,
+        PoseStack poseStack,
+        MultiBufferSource buffer,
+        int packedLight,
+        float partialTick
+    ) {
+        PlayerModel<RagdollDollEntity> model = parent.getModel();
+        ModelPart offLimb = oppositeLimb(bodyPart, model);
+
+        for (Map.Entry<String, List<ItemStack>> entry : accessoriesItems.entrySet()) {
+            String slotName = entry.getKey();
+            if (ArmorSlotTypes.isArmorType(slotName)) continue;
+            List<ItemStack> stacks = entry.getValue();
+            for (int i = 0; i < stacks.size(); i++) {
+                if (!slotIndexBelongsToPart(slotName, i, bodyPart)) continue;
+                ItemStack stack = stacks.get(i);
+                if (stack.isEmpty()) continue;
+                AccessoryRenderer renderer = AccessoriesRendererRegistry.getRenderer(stack);
+                if (renderer.isEmpty()) continue;
+
+                float offLimbY = 0.0f;
+                if (offLimb != null) {
+                    offLimbY = offLimb.y;
+                    offLimb.y += 10000.0f;
+                }
+                SlotReference ref = SlotReference.of(entity, slotName, i);
+                try {
+                    renderer.render(stack, ref, poseStack, model, buffer, packedLight,
+                        0.0f, 0.0f, partialTick, 0.0f, 0.0f, 0.0f);
+                } catch (Exception e) {
+                    // Swallow rendering errors for individual accessories.
+                } finally {
+                    if (offLimb != null) offLimb.y = offLimbY;
+                }
+            }
+        }
     }
 
     static void render(

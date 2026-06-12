@@ -17,14 +17,20 @@ import dev.ryanhcode.sable.companion.math.JOMLConversion;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import javax.annotation.Nullable;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
@@ -56,6 +62,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    private ItemStack chestItem = ItemStack.EMPTY;
    private ItemStack legsItem = ItemStack.EMPTY;
    private ItemStack feetItem = ItemStack.EMPTY;
+   private Map<String, List<ItemStack>> curiosItems = new LinkedHashMap<>();
+   private Map<String, List<ItemStack>> accessoriesItems = new LinkedHashMap<>();
    private final Map<UUID, GrabConstraint> grabbers = new HashMap<>();
 
    public RagdollPartBlockEntity(BlockPos pos, BlockState state) {
@@ -185,6 +193,40 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       };
    }
 
+   public void setCurioItems(String slotId, List<ItemStack> stacks) {
+      if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
+         this.curiosItems.remove(slotId);
+      } else {
+         this.curiosItems.put(slotId, Collections.unmodifiableList(new ArrayList<>(stacks)));
+      }
+      this.setChanged();
+   }
+
+   public Map<String, List<ItemStack>> getCurioItems() {
+      return Collections.unmodifiableMap(this.curiosItems);
+   }
+
+   public boolean hasCurioItems() {
+      return !this.curiosItems.isEmpty();
+   }
+
+   public void setAccessoriesItems(String slotName, List<ItemStack> stacks) {
+      if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
+         this.accessoriesItems.remove(slotName);
+      } else {
+         this.accessoriesItems.put(slotName, Collections.unmodifiableList(new ArrayList<>(stacks)));
+      }
+      this.setChanged();
+   }
+
+   public Map<String, List<ItemStack>> getAccessoriesItems() {
+      return Collections.unmodifiableMap(this.accessoriesItems);
+   }
+
+   public boolean hasAccessoriesItems() {
+      return !this.accessoriesItems.isEmpty();
+   }
+
    @Override
    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
       super.saveAdditional(tag, registries);
@@ -202,6 +244,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       saveItem(tag, registries, "ChestItem", this.chestItem);
       saveItem(tag, registries, "LegsItem", this.legsItem);
       saveItem(tag, registries, "FeetItem", this.feetItem);
+      if (!this.curiosItems.isEmpty()) tag.put("CurioItems", saveSlotMap(this.curiosItems, registries));
+      if (!this.accessoriesItems.isEmpty()) tag.put("AccessoriesItems", saveSlotMap(this.accessoriesItems, registries));
    }
 
    @Override
@@ -218,6 +262,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       this.chestItem = loadItem(tag, registries, "ChestItem");
       this.legsItem = loadItem(tag, registries, "LegsItem");
       this.feetItem = loadItem(tag, registries, "FeetItem");
+      loadSlotMap(tag, registries, "CurioItems", this.curiosItems);
+      loadSlotMap(tag, registries, "AccessoriesItems", this.accessoriesItems);
    }
 
    @Override
@@ -238,6 +284,48 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    private static ItemStack loadItem(CompoundTag tag, HolderLookup.Provider registries, String key) {
       return tag.contains(key) ? ItemStack.parse(registries, tag.getCompound(key)).orElse(ItemStack.EMPTY) : ItemStack.EMPTY;
+   }
+
+   private static ListTag saveSlotMap(Map<String, List<ItemStack>> slotMap, HolderLookup.Provider registries) {
+      ListTag list = new ListTag();
+      slotMap.forEach((slotId, stacks) -> {
+         CompoundTag slotTag = new CompoundTag();
+         slotTag.putString("SlotId", slotId);
+         ListTag itemList = new ListTag();
+         for (ItemStack stack : stacks) {
+            CompoundTag itemTag = new CompoundTag();
+            if (!stack.isEmpty()) itemTag.put("Item", stack.save(registries));
+            itemList.add(itemTag);
+         }
+         slotTag.put("Stacks", itemList);
+         list.add(slotTag);
+      });
+      return list;
+   }
+
+   private static void loadSlotMap(CompoundTag tag, HolderLookup.Provider registries, String key, Map<String, List<ItemStack>> out) {
+      out.clear();
+      if (!tag.contains(key, Tag.TAG_LIST)) return;
+      ListTag list = tag.getList(key, Tag.TAG_COMPOUND);
+      for (int i = 0; i < list.size(); i++) {
+         CompoundTag slotTag = list.getCompound(i);
+         String slotId = slotTag.getString("SlotId");
+         ListTag itemList = slotTag.getList("Stacks", Tag.TAG_COMPOUND);
+         List<ItemStack> stacks = new ArrayList<>(itemList.size());
+         boolean hasItem = false;
+         for (int j = 0; j < itemList.size(); j++) {
+            CompoundTag itemTag = itemList.getCompound(j);
+            Tag itemNbt = itemTag.get("Item");
+            if (itemNbt != null) {
+               ItemStack stack = ItemStack.parse(registries, itemNbt).orElse(ItemStack.EMPTY);
+               stacks.add(stack);
+               if (!stack.isEmpty()) hasItem = true;
+            } else {
+               stacks.add(ItemStack.EMPTY);
+            }
+         }
+         if (hasItem) out.put(slotId, stacks);
+      }
    }
 
    private final class GrabConstraint {

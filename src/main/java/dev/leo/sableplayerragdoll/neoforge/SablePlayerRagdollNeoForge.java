@@ -14,6 +14,7 @@ import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
 import dev.leo.sableplayerragdoll.SablePlayerRagdollBootstrap;
 import dev.leo.sableplayerragdoll.api.PlayerlessRagdollSession;
 import dev.leo.sableplayerragdoll.api.RagdollAPI;
+import dev.leo.sableplayerragdoll.api.RagdollInteractEvent;
 import dev.leo.sableplayerragdoll.api.RagdollWailingOptions;
 import dev.leo.sableplayerragdoll.block.RagdollBlocks;
 import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
@@ -187,10 +188,26 @@ public final class SablePlayerRagdollNeoForge {
       }
       if (!(event.getLevel() instanceof ServerLevel level)) return;
       BlockPos target = event.getPos().relative(event.getFace());
-      if (isInRagdollPlot(level, target) || isInRagdollPlot(level, event.getPos())) {
-         event.setCancellationResult(InteractionResult.FAIL);
-         event.setCanceled(true);
+      boolean targetIsRagdoll = isInRagdollPlot(level, target);
+      boolean posIsRagdoll = isInRagdollPlot(level, event.getPos());
+      if (!targetIsRagdoll && !posIsRagdoll) return;
+      if (event.getEntity() instanceof ServerPlayer player) {
+         BlockPos ragdollPos = targetIsRagdoll ? target : event.getPos();
+         SubLevel subLevel = Sable.HELPER.getContaining(level, ragdollPos);
+         if (subLevel != null) {
+            UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
+            if (headId != null) {
+               RagdollInteractEvent interactEvent = new RagdollInteractEvent(player, headId, subLevel.getUniqueId(), ragdollPos, level);
+               if (NeoForge.EVENT_BUS.post(interactEvent).isCanceled()) {
+                  event.setCancellationResult(InteractionResult.SUCCESS);
+                  event.setCanceled(true);
+                  return;
+               }
+            }
+         }
       }
+      event.setCancellationResult(InteractionResult.FAIL);
+      event.setCanceled(true);
    }
 
    private static void onRightClickItem(PlayerInteractEvent.RightClickItem event) {

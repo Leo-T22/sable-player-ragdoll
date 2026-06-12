@@ -28,6 +28,13 @@ public final class RagdollExpireHelper {
    private RagdollExpireHelper() {
    }
 
+   static void unseatPlayerSilently(ServerLevel level, UUID playerId) {
+      Entity entity = level.getEntity(playerId);
+      if (!(entity instanceof LivingEntity livingEntity)) return;
+      if (livingEntity.isPassenger()) livingEntity.stopRiding();
+      RagdollSeatingHelper.restoreVisibility(livingEntity);
+   }
+
    public static void expire(SubLevelPhysicsSystem physicsSystem, ServerLevel level, ServerSubLevel subLevel, String reason) {
       if (!subLevel.isRemoved() && !RagdollSessionManager.isExpiring(subLevel)) {
          RagdollSessionManager.markExpiring(subLevel, reason);

@@ -36,6 +36,7 @@ public final class RagdollSessionManager {
    private static final String DESPAWN_MODE_KEY = "despawnMode";
    private static final String DESPAWN_TICKS_KEY = "despawnTicks";
    private static final String DESPAWN_SPEED_KEY = "despawnSpeed";
+   private static final String GRAB_DISABLED_KEY = "grabDisabled";
    private static final int MIN_TICKS_BEFORE_SPEED_RELEASE = 8;
    private static final int NON_PLAYER_DURATION_SCALE = 3;
    private static final Set<UUID> ACTIVE = ConcurrentHashMap.newKeySet();
@@ -77,6 +78,7 @@ public final class RagdollSessionManager {
       LAST_VELOCITIES.remove(subLevel.getUniqueId());
       NEXT_IMPACT_DAMAGE_TICKS.remove(subLevel.getUniqueId());
       RagdollMotorEffects.clear(subLevel.getUniqueId());
+      RagdollAccessoriesLiveSync.clear(subLevel.getUniqueId());
    }
 
    public static void setCustomDespawnConditions(ServerSubLevel subLevel, List<DespawnCondition> conditions) {
@@ -85,6 +87,19 @@ public final class RagdollSessionManager {
       } else {
          CUSTOM_DESPAWN_CONDITIONS.put(subLevel.getUniqueId(), List.copyOf(conditions));
       }
+   }
+
+   static void detachPlayer(ServerSubLevel subLevel, PlayerlessDespawnRule rule, long currentGameTime) {
+      CompoundTag tag = subLevel.getUserDataTag();
+      if (tag == null) return;
+      tag.remove(PLAYER_ID_KEY);
+      tag.putBoolean(NON_PLAYER_KEY, true);
+      tag.putLong(START_TICK_KEY, currentGameTime);
+      tag.remove(EXPIRING_KEY);
+      subLevel.setUserDataTag(tag);
+      setPlayerlessDespawnRule(subLevel, rule);
+      CUSTOM_DESPAWN_CONDITIONS.remove(subLevel.getUniqueId());
+      DISMOUNT_LOCKED.remove(subLevel.getUniqueId());
    }
 
    public static void setPlayerlessDespawnRule(ServerSubLevel subLevel, PlayerlessDespawnRule rule) {
@@ -113,6 +128,25 @@ public final class RagdollSessionManager {
       }
 
       return null;
+   }
+
+   static void setGrabDisabled(ServerSubLevel subLevel, boolean disabled) {
+      CompoundTag tag = subLevel.getUserDataTag();
+      if (tag == null) {
+         if (!disabled) return;
+         tag = new CompoundTag();
+      }
+      if (disabled) {
+         tag.putBoolean(GRAB_DISABLED_KEY, true);
+      } else {
+         tag.remove(GRAB_DISABLED_KEY);
+      }
+      subLevel.setUserDataTag(tag);
+   }
+
+   static boolean isGrabDisabled(ServerSubLevel subLevel) {
+      CompoundTag tag = subLevel.getUserDataTag();
+      return tag != null && tag.getBoolean(GRAB_DISABLED_KEY);
    }
 
    public static void setDismountLocked(ServerSubLevel subLevel, boolean locked) {
@@ -151,12 +185,21 @@ public final class RagdollSessionManager {
                      } else {
                         RagdollMotorEffects.tick(level, serverSubLevel);
                         applyImpactDamage(level, physicsSystem, serverContainer, serverSubLevel);
+                        pollAccessories(level, serverSubLevel);
                      }
                   }
                }
             }
          }
       }
+   }
+
+   private static void pollAccessories(ServerLevel level, ServerSubLevel head) {
+      UUID playerId = getPlayerId(head);
+      if (playerId == null) return;
+      ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
+      if (player == null) return;
+      RagdollAccessoriesLiveSync.poll(level, head.getUniqueId(), player);
    }
 
    static boolean shouldExpire(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {

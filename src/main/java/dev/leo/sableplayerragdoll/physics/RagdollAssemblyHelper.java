@@ -193,6 +193,16 @@ public final class RagdollAssemblyHelper {
       return partIds == null ? List.of(headId) : partIds;
    }
 
+   public static Map<BodyPart, UUID> linkedPartsAsMap(UUID headId) {
+      List<UUID> parts = linkedParts(headId);
+      Map<BodyPart, UUID> result = new EnumMap<>(BodyPart.class);
+      for (UUID partId : parts) {
+         BodyPart bodyPart = BODY_PART_BY_SUBLEVEL.get(partId);
+         if (bodyPart != null) result.put(bodyPart, partId);
+      }
+      return result;
+   }
+
    public static @Nullable UUID linkedTorso(UUID headId) {
       for (UUID partId : linkedParts(headId)) {
          if (BODY_PART_BY_SUBLEVEL.get(partId) == BodyPart.TORSO) {
@@ -271,6 +281,7 @@ public final class RagdollAssemblyHelper {
       if (blockEntity instanceof RagdollPartBlockEntity ragdollPart) {
          if (equipmentSource != null) {
             ragdollPart.configure(part.bodyPart(), equipmentSource);
+            RagdollEquipmentHelper.applyExtraEquipment(ragdollPart, equipmentSource);
          } else {
             ragdollPart.configure(part.bodyPart(), profile);
          }

@@ -17,7 +17,10 @@ own gameplay.
 - Playerless dummy ragdolls with position, heading, skin profile, velocity, and
   despawn options.
 - Per-limb spawn pose and joint stiffness/damping control through the public API.
+- Playerless ragdoll equipment snapshots for vanilla equipment, Curios, and
+  Accessories visual state.
 - Simple API for addon mods to launch ragdolls or query active sessions.
+- Ragdoll part interaction events for addon mods.
 - Datapack item tag support for weapons that ragdoll players on hit.
 - Test commands for spawning dummies and giving a ragdoll test stick.
 
@@ -99,10 +102,15 @@ RagdollAPI.launch(player, velocity, launchOptions);
 RagdollAPI.spawnPlayerless(level, position, headingDegrees);
 RagdollAPI.spawnPlayerless(level, position, headingDegrees, velocity);
 RagdollAPI.spawnPlayerless(level, position, headingDegrees, profile, velocity);
+RagdollAPI.detachActive(player, playerlessDespawnRule);
 RagdollAPI.activeSession(player);
 RagdollAPI.isRagdolled(player);
 RagdollAPI.isRagdollSubLevel(subLevelId);
 RagdollAPI.isRagdollSubLevel(subLevel);
+RagdollAPI.torsoSubLevelId(headSubLevelId);
+RagdollAPI.setGrabDisabled(level, partSubLevelId, disabled);
+RagdollAPI.captureEquipment(player, equipmentScope);
+RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, snapshot);
 ```
 
 Despawning helpers are available through:
@@ -171,6 +179,62 @@ RagdollAPI.spawnPlayerless(level, position, headingDegrees, profile, velocity,
    despawnRule, limbs);
 ```
 
+### Playerless ragdoll equipment
+
+Addon mods can capture a player's render-relevant equipment into a detached
+snapshot and apply it to a playerless ragdoll. The snapshot is visual state only:
+vanilla hand/armor slots plus supported optional equipment slots. It is not the
+player's full inventory.
+
+```java
+RagdollEquipmentSnapshot snapshot =
+   RagdollAPI.captureEquipment(player, RagdollEquipmentScope.ALL);
+
+RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, snapshot);
+```
+
+`RagdollEquipmentScope` controls what gets captured:
+
+```java
+RagdollEquipmentScope.VANILLA;
+RagdollEquipmentScope.OPTIONAL_MODS;
+RagdollEquipmentScope.ALL;
+```
+
+Snapshots can be merged when capture timing differs between vanilla and optional
+equipment systems:
+
+```java
+RagdollEquipmentSnapshot vanilla =
+   RagdollAPI.captureEquipment(player, RagdollEquipmentScope.VANILLA);
+
+RagdollEquipmentSnapshot optional =
+   RagdollAPI.captureEquipment(player, RagdollEquipmentScope.OPTIONAL_MODS);
+
+RagdollEquipmentSnapshot combined = vanilla.merge(optional);
+RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, combined);
+```
+
+Snapshots can also be filtered against an item pool before re-applying them. This
+is useful for addon mods with lootable mannequins, corpses, or other detached
+ragdolls whose visual gear should disappear as matching items are removed.
+
+```java
+RagdollEquipmentSnapshot visible = snapshot.filteredByAvailableItems(items);
+RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, visible);
+```
+
+For playerless ragdolls created from an active player ragdoll, use:
+
+```java
+PlayerlessRagdollSession corpse =
+   RagdollAPI.detachActive(player, PlayerlessDespawnRule.never());
+```
+
+`torsoSubLevelId(headSubLevelId)` can be used to find the torso part, and
+`setGrabDisabled(level, partSubLevelId, true)` can disable the grab-drag mechanic
+for a specific part.
+
 ### Wailing motor effects
 
 Active sessions can temporarily retarget their joint motors for a twitching or
@@ -215,6 +279,7 @@ Addon hooks are posted on the NeoForge game event bus:
 ```java
 RagdollStartEvent
 RagdollEndEvent
+RagdollInteractEvent
 ```
 
 `RagdollStartEvent` fires before a player ragdoll is assembled. It is
@@ -223,13 +288,19 @@ cancellable, and listeners can replace the launch velocity.
 `RagdollEndEvent` fires after a player exits a ragdoll. It exposes the player,
 the exit velocity inherited from the ragdoll, and a reason.
 
+`RagdollInteractEvent` fires when a player interacts with a ragdoll part. It
+exposes the player, head sublevel UUID, interacted part sublevel UUID, world
+position, and server level. It is cancellable, allowing addon mods to replace
+the default interaction behavior.
+
 `isRagdollSubLevel` lets other mods check whether a given sub-level (or its UUID)
 belongs to a ragdoll.
 
-The API covers spawning, despawning, per-limb pose/joint control, temporary
-wailing effects, session locking, basic session queries, and sub-level
-identification. It does not currently expose direct force application to an
-already active ragdoll or per-body-part inventory injection.
+The API covers spawning, despawning, playerless detaching, per-limb pose/joint
+control, temporary wailing effects, session locking, visual equipment snapshots,
+part interaction hooks, basic session queries, and sub-level identification. It
+does not currently expose direct force application to an already active ragdoll
+or full inventory storage.
 
 ## License
 

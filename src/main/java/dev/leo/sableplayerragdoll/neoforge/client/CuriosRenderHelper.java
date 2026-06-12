@@ -3,6 +3,7 @@ package dev.leo.sableplayerragdoll.neoforge.client;
 import com.mojang.blaze3d.vertex.PoseStack;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.model.PlayerModel;
@@ -37,6 +38,49 @@ final class CuriosRenderHelper {
         Set<BodyPart> parts = SLOT_BODY_PARTS.get(slotId);
         // Unknown slots default to TORSO so they at least appear somewhere.
         return parts == null ? bodyPart == BodyPart.TORSO : parts.contains(bodyPart);
+    }
+
+    @SuppressWarnings({"unchecked", "rawtypes"})
+    static void renderFromStored(
+        BodyPart bodyPart,
+        Map<String, List<ItemStack>> curioItems,
+        LivingEntity entity,
+        RenderLayerParent<RagdollDollEntity, PlayerModel<RagdollDollEntity>> parent,
+        PoseStack poseStack,
+        MultiBufferSource buffer,
+        int packedLight,
+        float partialTick
+    ) {
+        for (Map.Entry<String, List<ItemStack>> entry : curioItems.entrySet()) {
+            String slotId = entry.getKey();
+            if (!slotBelongsToPart(slotId, bodyPart)) continue;
+
+            List<ItemStack> stacks = entry.getValue();
+            for (int i = 0; i < stacks.size(); i++) {
+                ItemStack stack = stacks.get(i);
+                if (stack.isEmpty()) continue;
+
+                SlotContext slotContext = new SlotContext(slotId, entity, i, false, true);
+
+                CuriosRendererRegistry.getRenderer(stack.getItem()).ifPresent(renderer -> {
+                    try {
+                        ICurioRenderer raw = renderer;
+                        raw.render(
+                            stack,
+                            slotContext,
+                            poseStack,
+                            parent,
+                            buffer,
+                            packedLight,
+                            partialTick,
+                            0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+                        );
+                    } catch (Exception e) {
+                        // Swallow rendering errors for individual curio items.
+                    }
+                });
+            }
+        }
     }
 
     @SuppressWarnings("unchecked")
