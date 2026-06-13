@@ -11,8 +11,8 @@ import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
+import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintConfiguration;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
-import dev.ryanhcode.sable.api.physics.constraint.generic.GenericConstraintConfiguration;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3i;
@@ -401,14 +401,14 @@ public final class RagdollAssemblyHelper {
       }
 
       try {
-         GenericConstraintConfiguration config = new GenericConstraintConfiguration(
+         PhysicsConstraintConfiguration<?> config = SableConstraintCompat.generic(
             firstAnchor,
             secondAnchor,
             new Quaterniond(),
             new Quaterniond(),
             Set.of(ConstraintJointAxis.LINEAR_X, ConstraintJointAxis.LINEAR_Y, ConstraintJointAxis.LINEAR_Z)
          );
-         PhysicsConstraintHandle handle = physicsSystem.getPipeline().addConstraint(first.subLevel(), second.subLevel(), config);
+         PhysicsConstraintHandle handle = SableConstraintCompat.addConstraint(physicsSystem.getPipeline(), first.subLevel(), second.subLevel(), config);
          handle.setContactsEnabled(RagdollSettings.partSelfCollision());
          ACTIVE_CONSTRAINTS.add(handle);
          if (headId != null) {

@@ -10,6 +10,7 @@ import dev.leo.sableplayerragdoll.neoforge.client.RagdollKeybinds;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollPartBlockEntityRenderer;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollSeatEntityRenderer;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollGrabClient;
+import dev.leo.sableplayerragdoll.neoforge.client.RagdollBlockInteractClient;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.api.distmarker.Dist;
@@ -29,6 +30,7 @@ public final class SablePlayerRagdollNeoForgeClient {
       RagdollKeybinds.init(modBus);
       RagdollInputClient.init();
       RagdollGrabClient.init();
+      RagdollBlockInteractClient.init();
       modBus.addListener(SablePlayerRagdollNeoForgeClient::registerEntityRenderers);
    }
 

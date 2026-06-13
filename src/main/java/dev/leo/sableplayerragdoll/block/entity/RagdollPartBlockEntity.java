@@ -10,7 +10,7 @@ import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.block.BlockEntitySubLevelActor;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
-import dev.ryanhcode.sable.api.physics.constraint.free.FreeConstraintConfiguration;
+import dev.leo.sableplayerragdoll.physics.SableConstraintCompat;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -387,8 +387,9 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
          }
 
          SubLevelPhysicsSystem physicsSystem = container.physicsSystem();
-         this.constraintHandle = physicsSystem.getPipeline()
-            .addConstraint(null, subLevel, new FreeConstraintConfiguration(constraintGoal, constraintPosition, new Quaterniond()));
+         this.constraintHandle = SableConstraintCompat.addConstraint(
+            physicsSystem.getPipeline(), null, subLevel,
+            SableConstraintCompat.free(constraintGoal, constraintPosition, new Quaterniond()));
 
          for (ConstraintJointAxis axis : ConstraintJointAxis.LINEAR) {
             this.constraintHandle.setMotor(axis, 0.0, GRAB_STIFFNESS, GRAB_DAMPING, true, GRAB_MAX_FORCE);
