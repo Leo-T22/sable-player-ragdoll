@@ -45,8 +45,19 @@ import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.projectile.AbstractArrow;
+import net.minecraft.world.entity.projectile.Fireball;
+import net.minecraft.world.entity.projectile.LargeFireball;
+import net.minecraft.world.entity.projectile.Projectile;
+import net.minecraft.world.entity.projectile.ShulkerBullet;
+import net.minecraft.world.entity.projectile.ThrownTrident;
+import net.minecraft.world.entity.projectile.WitherSkull;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.BlockPos;
@@ -64,6 +75,7 @@ import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
+import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEquipmentChangeEvent;
 import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
@@ -110,6 +122,7 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerStarted);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerStopped);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onAddReloadListeners);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onProjectileImpact);
    }
 
    private static void onLevelTick(Post event) {
@@ -178,6 +191,15 @@ public final class SablePlayerRagdollNeoForge {
    private static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
       if (event.getLevel().getBlockState(event.getPos()).getBlock() instanceof RagdollPartBlock) {
          event.setCanceled(true);
+         if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START
+               && event.getLevel() instanceof ServerLevel level
+               && event.getEntity() instanceof ServerPlayer attacker) {
+            SubLevel subLevel = Sable.HELPER.getContaining(level, event.getPos());
+            if (subLevel != null) {
+               UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
+               if (headId != null) pipeAttack(level, headId, attacker);
+            }
+         }
          return;
       }
       if (isRagdolled(event)) event.setCanceled(true);
@@ -206,6 +228,10 @@ public final class SablePlayerRagdollNeoForge {
                   event.setCanceled(true);
                   return;
                }
+               InteractionResult piped = pipeInteract(level, headId, player, event.getHand());
+               event.setCancellationResult(piped != null ? piped : InteractionResult.FAIL);
+               event.setCanceled(true);
+               return;
             }
          }
       }
@@ -255,6 +281,91 @@ public final class SablePlayerRagdollNeoForge {
       }
 
       RagdollRegistry.triggerWeaponHit(attacker, target);
+   }
+
+   @javax.annotation.Nullable
+   private static InteractionResult pipeInteract(ServerLevel level, UUID headId, ServerPlayer clickingPlayer, InteractionHand hand) {
+      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
+      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return null;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
+      if (ragdollPlayerId == null) return null;
+      Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
+      if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return null;
+      RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(true);
+      try {
+         return ragdolledPlayer.interact(clickingPlayer, hand);
+      } finally {
+         RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(false);
+      }
+   }
+
+   private static void pipeAttack(ServerLevel level, UUID headId, ServerPlayer attacker) {
+      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
+      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
+      if (ragdollPlayerId == null) return;
+      Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
+      if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return;
+      RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(true);
+      try {
+         attacker.attack(ragdolledPlayer);
+      } finally {
+         RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(false);
+      }
+   }
+
+   private static void onProjectileImpact(ProjectileImpactEvent event) {
+      if (!(event.getProjectile().level() instanceof ServerLevel level)) return;
+      if (!(event.getRayTraceResult() instanceof BlockHitResult hit)) return;
+      if (!(level.getBlockState(hit.getBlockPos()).getBlock() instanceof RagdollPartBlock)) return;
+
+      SubLevel subLevel = Sable.HELPER.getContaining(level, hit.getBlockPos());
+      if (subLevel == null) return;
+      UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
+      if (headId == null) return;
+
+      if (pipeProjectile(level, headId, event.getProjectile())) {
+         event.setCanceled(true);
+      }
+   }
+
+   private static boolean pipeProjectile(ServerLevel level, UUID headId, Projectile projectile) {
+      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
+      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return false;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
+      if (ragdollPlayerId == null) return false;
+      Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
+      if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return false;
+
+      DamageSource source = projectileDamageSource(level, projectile);
+      float damage = projectileDamageAmount(projectile);
+
+      RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(true);
+      try {
+         return ragdolledPlayer.hurt(source, damage);
+      } finally {
+         RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(false);
+      }
+   }
+
+   private static DamageSource projectileDamageSource(ServerLevel level, Projectile projectile) {
+      Entity owner = projectile.getOwner();
+      if (projectile instanceof ThrownTrident trident) return level.damageSources().trident(trident, owner);
+      if (projectile instanceof AbstractArrow arrow) return level.damageSources().arrow(arrow, owner);
+      if (projectile instanceof WitherSkull skull) return level.damageSources().witherSkull(skull, owner);
+      if (projectile instanceof Fireball fireball) return level.damageSources().fireball(fireball, owner);
+      LivingEntity livingOwner = owner instanceof LivingEntity le ? le : null;
+      return level.damageSources().mobProjectile(projectile, livingOwner);
+   }
+
+   private static float projectileDamageAmount(Projectile projectile) {
+      // AbstractArrow.getBaseDamage() is already velocity-scaled and covers ThrownTrident (8.0)
+      if (projectile instanceof AbstractArrow arrow) return (float) arrow.getBaseDamage();
+      if (projectile instanceof WitherSkull) return 8.0F;
+      if (projectile instanceof LargeFireball) return 6.0F;
+      if (projectile instanceof Fireball) return 5.0F; // SmallFireball, DragonFireball, etc.
+      if (projectile instanceof ShulkerBullet) return 4.0F;
+      return 0.0F; // snowball, egg, wind charge, etc. — no direct damage in vanilla
    }
 
    private static boolean isRagdolled(PlayerInteractEvent event) {

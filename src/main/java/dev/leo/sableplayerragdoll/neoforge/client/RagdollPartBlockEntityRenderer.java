@@ -98,9 +98,12 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
 
    @SuppressWarnings({"unchecked", "rawtypes"})
    private void renderLayers(RagdollPartBlockEntity blockEntity, BodyPart bodyPart, LivingEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
-      // Render the base model
+      // Render the base model — use hurt overlay when the real player is in their hurt window
+      int baseOverlay = entity.hurtTime > 0
+          ? OverlayTexture.pack(0, 3)  // u=0 (full flash), v=3 (red hurt row)
+          : OverlayTexture.NO_OVERLAY;
       VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
-      this.model.renderToBuffer(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+      this.model.renderToBuffer(poseStack, vertices, packedLight, baseOverlay);
 
       // Render all vanilla layers from the standard PlayerRenderer
       Minecraft minecraft = Minecraft.getInstance();

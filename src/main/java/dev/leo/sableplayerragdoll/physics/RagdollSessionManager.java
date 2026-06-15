@@ -27,6 +27,8 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
 public final class RagdollSessionManager {
+   public static final ThreadLocal<Boolean> RAGDOLL_PIPE_ACTIVE = ThreadLocal.withInitial(() -> false);
+
    public static final String RAGDOLL_USER_TAG = "sable_player_ragdoll";
    private static final String START_TICK_KEY = "startTick";
    private static final String PLAYER_ID_KEY = "playerId";
@@ -327,9 +329,15 @@ public final class RagdollSessionManager {
    }
 
    @Nullable
-   static UUID getPlayerId(ServerSubLevel subLevel) {
+   public static UUID getPlayerId(ServerSubLevel subLevel) {
       CompoundTag tag = subLevel.getUserDataTag();
       return tag != null && tag.hasUUID(PLAYER_ID_KEY) ? tag.getUUID(PLAYER_ID_KEY) : null;
+   }
+
+   public static boolean isPlayerCurrentlyRagdolled(ServerPlayer player) {
+      if (ACTIVE.isEmpty()) return false;
+      ServerSubLevel ragdoll = activeRagdollForPlayer(player.serverLevel(), player.getUUID());
+      return ragdoll != null && RagdollAssemblyHelper.linkedTorso(ragdoll.getUniqueId()) != null;
    }
 
    private static double sampleSpeedMetersPerSecond(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
