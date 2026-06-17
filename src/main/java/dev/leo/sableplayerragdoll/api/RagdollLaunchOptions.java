@@ -3,7 +3,7 @@ package dev.leo.sableplayerragdoll.api;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import java.util.List;
 
-public record RagdollLaunchOptions(boolean autoSeat, List<DespawnCondition> despawnConditions, RagdollLimbOptions limbs, boolean lockDismount) {
+public record RagdollLaunchOptions(boolean autoSeat, List<DespawnCondition> despawnConditions, RagdollLimbOptions limbs, boolean lockDismount, @org.jetbrains.annotations.Nullable RagdollWailingOptions wailing) {
 
    public static RagdollLaunchOptions defaults() {
       return builder().build();
@@ -18,6 +18,8 @@ public record RagdollLaunchOptions(boolean autoSeat, List<DespawnCondition> desp
       private List<DespawnCondition> despawnConditions = List.of();
       private RagdollLimbOptions limbs = RagdollLimbOptions.defaults();
       private boolean lockDismount = false;
+      @org.jetbrains.annotations.Nullable
+      private RagdollWailingOptions wailing = null;
 
       private Builder() {
       }
@@ -42,8 +44,13 @@ public record RagdollLaunchOptions(boolean autoSeat, List<DespawnCondition> desp
          return this;
       }
 
+      public Builder wailing(@org.jetbrains.annotations.Nullable RagdollWailingOptions wailing) {
+         this.wailing = wailing;
+         return this;
+      }
+
       public RagdollLaunchOptions build() {
-         return new RagdollLaunchOptions(this.autoSeat, this.despawnConditions, this.limbs, this.lockDismount);
+         return new RagdollLaunchOptions(this.autoSeat, this.despawnConditions, this.limbs, this.lockDismount, this.wailing);
       }
    }
 }

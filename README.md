@@ -21,7 +21,9 @@ own gameplay.
   Accessories visual state.
 - Simple API for addon mods to launch ragdolls or query active sessions.
 - Ragdoll part interaction events for addon mods.
-- Datapack item tag support for weapons that ragdoll players on hit.
+- Datapack item tag support for weapons that ragdoll players on hit, with an
+  optional critical-hit-only variant.
+- `/ragdoll` command to fling players into a ragdoll from a position or entity.
 - Test commands for spawning dummies and giving a ragdoll test stick.
 
 ## Requirements
@@ -33,13 +35,41 @@ own gameplay.
 
 ## Commands
 
-The command root is:
+### `/ragdoll`
+
+Ragdolls one or more players, flinging them away from a source position or entity.
+Requires permission level 2.
 
 ```mcfunction
-/sable_player_ragdoll
+/ragdoll <targets> <length> <strength> <x> <y> <z>
+/ragdoll <targets> <length> <strength> by <entity>
 ```
 
-Useful test commands:
+- `targets` — player selector.
+- `length` — ticks the ragdoll lasts. The player cannot get up early.
+- `strength` — velocity multiplier. `0` ragdolls in place, `1` is moderate, `3` is very strong.
+- `x y z` — world position the force originates from. Supports relative (`~`) and local (`^`) coordinates.
+- `by <entity>` — uses the entity's current position as the force origin.
+
+The player is flung in the direction from the source toward them. Examples:
+
+```mcfunction
+# Flings player upward moderately for 3 seconds (source 5 blocks below)
+/ragdoll @p 60 1 ~ ~-5 ~
+
+# Blasts player from the nearest armor stand for 5 seconds
+/ragdoll @p 100 2 by @e[type=minecraft:armor_stand,limit=1,sort=nearest]
+
+# Player falls backward gently for 2 seconds (source 3 blocks ahead)
+/ragdoll @p 40 0.25 ^ ^ ^3
+
+# Player launches forward hard for 1 second (source 3 blocks behind)
+/ragdoll @p 20 3 ^ ^-2 ^-3
+```
+
+### `/sable_player_ragdoll`
+
+Utility and debug commands:
 
 ```mcfunction
 /sable_player_ragdoll dummy
@@ -63,15 +93,11 @@ despawn below_speed <meters_per_second>
 
 `heading` is in degrees, using Minecraft's yaw-style direction.
 
-## Datapack Item Tag
+## Datapack Item Tags
 
-Items in this tag ragdoll players when used to hit them:
+### `sable_player_ragdoll:ragdoll_on_hit`
 
-```text
-sable_player_ragdoll:ragdoll_on_hit
-```
-
-Example datapack file:
+Items in this tag ragdoll the target player on any hit:
 
 ```json
 {
@@ -82,11 +108,26 @@ Example datapack file:
 }
 ```
 
-Path:
+Path: `data/sable_player_ragdoll/tags/item/ragdoll_on_hit.json`
 
-```text
-data/sable_player_ragdoll/tags/item/ragdoll_on_hit.json
+### `sable_player_ragdoll:ragdoll_on_critical_hit`
+
+Items in this tag ragdoll the target player only when the hit is a critical hit
+(falling, not sprinting, not in water):
+
+```json
+{
+  "replace": false,
+  "values": [
+    "minecraft:diamond_sword"
+  ]
+}
 ```
+
+Path: `data/sable_player_ragdoll/tags/item/ragdoll_on_critical_hit.json`
+
+An item only needs to be in one tag. Items in `ragdoll_on_critical_hit` do not
+also need to be in `ragdoll_on_hit`.
 
 ## Public API
 
@@ -107,11 +148,15 @@ RagdollAPI.activeSession(player);
 RagdollAPI.isRagdolled(player);
 RagdollAPI.isRagdollSubLevel(subLevelId);
 RagdollAPI.isRagdollSubLevel(subLevel);
-RagdollAPI.torsoSubLevelId(headSubLevelId);
 RagdollAPI.setGrabDisabled(level, partSubLevelId, disabled);
 RagdollAPI.captureEquipment(player, equipmentScope);
-RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, snapshot);
+RagdollAPI.applyEquipmentSnapshot(level, rootSubLevelId, snapshot);
 ```
+
+`launch()` returns `null` in most cases because the pose is captured
+asynchronously from the client before the ragdoll is assembled. Use
+`RagdollLaunchOptions` to configure all launch-time behavior up front, or call
+`RagdollAPI.activeSession(player)` once the ragdoll is already running.
 
 Despawning helpers are available through:
 
@@ -139,17 +184,17 @@ RagdollAPI.launch(player, velocityMetersPerSecond, options);
 `lockDismount(true)` prevents the player from manually exiting the ragdoll via
 the keybind or interaction. The ragdoll will still end if the despawn conditions
 trigger or if `session.release()` is called. To keep a player in ragdoll
-indefinitely until released by code:
+indefinitely until released by code, get the session via `activeSession`:
 
 ```java
-RagdollLaunchOptions options = RagdollLaunchOptions.builder()
+RagdollAPI.launch(player, velocity, RagdollLaunchOptions.builder()
    .lockDismount(true)
    .despawnConditions(List.of(DespawnCondition.never()))
-   .build();
+   .build());
 
-RagdollSession session = RagdollAPI.launch(player, velocity, options);
-// later, when you want to release:
-session.release();
+// later, once the player is ragdolled:
+RagdollSession session = RagdollAPI.activeSession(player);
+if (session != null) session.release();
 ```
 
 ### Per-limb pose and joint control
@@ -190,7 +235,7 @@ player's full inventory.
 RagdollEquipmentSnapshot snapshot =
    RagdollAPI.captureEquipment(player, RagdollEquipmentScope.ALL);
 
-RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, snapshot);
+RagdollAPI.applyEquipmentSnapshot(level, rootSubLevelId, snapshot);
 ```
 
 `RagdollEquipmentScope` controls what gets captured:
@@ -212,7 +257,7 @@ RagdollEquipmentSnapshot optional =
    RagdollAPI.captureEquipment(player, RagdollEquipmentScope.OPTIONAL_MODS);
 
 RagdollEquipmentSnapshot combined = vanilla.merge(optional);
-RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, combined);
+RagdollAPI.applyEquipmentSnapshot(level, rootSubLevelId, combined);
 ```
 
 Snapshots can also be filtered against an item pool before re-applying them. This
@@ -221,7 +266,7 @@ ragdolls whose visual gear should disappear as matching items are removed.
 
 ```java
 RagdollEquipmentSnapshot visible = snapshot.filteredByAvailableItems(items);
-RagdollAPI.applyEquipmentSnapshot(level, headSubLevelId, visible);
+RagdollAPI.applyEquipmentSnapshot(level, rootSubLevelId, visible);
 ```
 
 For playerless ragdolls created from an active player ragdoll, use:
@@ -231,39 +276,40 @@ PlayerlessRagdollSession corpse =
    RagdollAPI.detachActive(player, PlayerlessDespawnRule.never());
 ```
 
-`torsoSubLevelId(headSubLevelId)` can be used to find the torso part, and
 `setGrabDisabled(level, partSubLevelId, true)` can disable the grab-drag mechanic
 for a specific part.
 
 ### Wailing motor effects
 
-Active sessions can temporarily retarget their joint motors for a twitching or
-wailing motion. This works for both player ragdolls and playerless ragdolls.
+Wailing temporarily retargets joint motors for a twitching motion. Configure it
+as part of launch options so it applies automatically once the ragdoll assembles:
 
 ```java
-RagdollSession session = RagdollAPI.launch(player, velocity);
-if (session != null) {
-   session.applyWailing(RagdollWailingOptions.builder()
+RagdollAPI.launch(player, velocity, RagdollLaunchOptions.builder()
+   .wailing(RagdollWailingOptions.builder()
       .durationTicks(100)
       .stiffness(15.0)
       .intervalTicks(10)
       .startDelayTicks(2)
-      .build());
+      .build())
+   .build());
+```
+
+To apply or stop wailing on a ragdoll that is already active, get the session
+first:
+
+```java
+RagdollSession session = RagdollAPI.activeSession(player);
+if (session != null) {
+   session.applyWailing(RagdollWailingOptions.defaults());
+   // or to stop early:
+   session.stopWailing();
 }
 ```
 
-Use `session.stopWailing()` to restore the ragdoll joints to their base motor
-targets before the duration ends. By default, wailing waits 2 ticks before the
-first retarget so the ragdoll can finish spawning cleanly. Convenience overloads
-are also available:
-
-```java
-session.applyWailing(100);
-session.applyWailing(15.0, 100, 10);
-```
-
-`RagdollKeybindExample` in the source is a worked end-to-end example showing an
-on-foot pose and an elytra pose built with this API.
+This works for both player ragdolls and playerless ragdolls. By default, wailing
+waits 2 ticks before the first retarget so the ragdoll can finish spawning
+cleanly.
 
 Playerless ragdolls use `PlayerlessDespawnRule`:
 
@@ -289,12 +335,15 @@ cancellable, and listeners can replace the launch velocity.
 the exit velocity inherited from the ragdoll, and a reason.
 
 `RagdollInteractEvent` fires when a player interacts with a ragdoll part. It
-exposes the player, head sublevel UUID, interacted part sublevel UUID, world
+exposes the player, root sublevel UUID, interacted part sublevel UUID, world
 position, and server level. It is cancellable, allowing addon mods to replace
 the default interaction behavior.
 
 `isRagdollSubLevel` lets other mods check whether a given sub-level (or its UUID)
 belongs to a ragdoll.
+
+`RagdollKeybindExample` in the source is a worked end-to-end example showing an
+on-foot pose and an elytra pose built with this API.
 
 The API covers spawning, despawning, playerless detaching, per-limb pose/joint
 control, temporary wailing effects, session locking, visual equipment snapshots,

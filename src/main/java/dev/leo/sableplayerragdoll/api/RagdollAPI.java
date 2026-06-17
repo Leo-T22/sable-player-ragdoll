@@ -70,6 +70,10 @@ public final class RagdollAPI {
       if (body == null) return null;
       RagdollSessionManager.setCustomDespawnConditions(body, resolvedOptions.despawnConditions());
       if (resolvedOptions.lockDismount()) RagdollSessionManager.setDismountLocked(body, true);
+      if (resolvedOptions.wailing() != null) {
+         RagdollWailingOptions w = resolvedOptions.wailing();
+         RagdollMotorEffects.applyWailing(level, body, w.stiffness(), w.durationTicks(), w.intervalTicks(), w.startDelayTicks());
+      }
       return new ActiveRagdollSession(player, body, level.getGameTime(), resolvedOptions.despawnConditions());
    }
 

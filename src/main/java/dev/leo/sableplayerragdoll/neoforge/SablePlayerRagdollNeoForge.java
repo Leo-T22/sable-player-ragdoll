@@ -283,7 +283,11 @@ public final class SablePlayerRagdollNeoForge {
       if (!(event.getEntity() instanceof ServerPlayer attacker) || !(event.getTarget() instanceof ServerPlayer target)) {
          return;
       }
-      if (!RagdollItemTags.canRagdollOnHit(attacker.getMainHandItem())) {
+      ItemStack weapon = attacker.getMainHandItem();
+      if (!RagdollItemTags.canRagdollOnHit(weapon)) {
+         return;
+      }
+      if (RagdollItemTags.requiresCriticalHit(weapon) && !attacker.isCriticalHit(target)) {
          return;
       }
 
@@ -389,6 +393,7 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    private static void onRegisterCommands(RegisterCommandsEvent event) {
+      event.getDispatcher().register(RagdollCommand.build());
       event.getDispatcher().register(
          Commands.literal("sable_player_ragdoll")
             .requires(source -> source.hasPermission(2))
