@@ -60,6 +60,7 @@ import net.minecraft.world.entity.projectile.Projectile;
 import net.minecraft.world.entity.projectile.ShulkerBullet;
 import net.minecraft.world.entity.projectile.ThrownTrident;
 import net.minecraft.world.entity.projectile.WitherSkull;
+import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.core.BlockPos;
@@ -287,7 +288,7 @@ public final class SablePlayerRagdollNeoForge {
       if (!RagdollItemTags.canRagdollOnHit(weapon)) {
          return;
       }
-      if (RagdollItemTags.requiresCriticalHit(weapon) && !attacker.isCriticalHit(target)) {
+      if (RagdollItemTags.requiresCriticalHit(weapon) && !isCriticalHit(attacker, target)) {
          return;
       }
 
@@ -381,6 +382,16 @@ public final class SablePlayerRagdollNeoForge {
       if (projectile instanceof Fireball) return 5.0F; // SmallFireball, DragonFireball, etc.
       if (projectile instanceof ShulkerBullet) return 4.0F;
       return 0.0F; // snowball, egg, wind charge, etc. — no direct damage in vanilla
+   }
+
+   private static boolean isCriticalHit(ServerPlayer attacker, ServerPlayer target) {
+      return attacker.fallDistance > 0.0F
+         && !attacker.onGround()
+         && !attacker.onClimbable()
+         && !attacker.isInWater()
+         && !attacker.hasEffect(MobEffects.BLINDNESS)
+         && !attacker.isPassenger()
+         && !attacker.isSprinting();
    }
 
    private static boolean isRagdolled(PlayerInteractEvent event) {
