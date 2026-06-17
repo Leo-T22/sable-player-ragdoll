@@ -113,8 +113,8 @@ public final class RagdollControlHelper {
 
    @Nullable
    private static ServerPlayer controllingPlayer(ServerLevel level, ServerSubLevel torsoSubLevel) {
-      UUID headId = RagdollAssemblyHelper.linkedHead(torsoSubLevel.getUniqueId());
-      if (headId == null) {
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(torsoSubLevel.getUniqueId());
+      if (rootId == null) {
          return null;
       }
 
@@ -123,12 +123,12 @@ public final class RagdollControlHelper {
          return null;
       }
 
-      SubLevel subLevel = serverContainer.getSubLevel(headId);
-      if (!(subLevel instanceof ServerSubLevel headSubLevel) || headSubLevel.isRemoved()) {
+      SubLevel subLevel = serverContainer.getSubLevel(rootId);
+      if (!(subLevel instanceof ServerSubLevel rootSubLevel) || rootSubLevel.isRemoved()) {
          return null;
       }
 
-      UUID playerId = RagdollSessionManager.getPlayerId(headSubLevel);
+      UUID playerId = RagdollSessionManager.getPlayerId(rootSubLevel);
       return playerId == null || !(level.getEntity(playerId) instanceof ServerPlayer player) ? null : player;
    }
 

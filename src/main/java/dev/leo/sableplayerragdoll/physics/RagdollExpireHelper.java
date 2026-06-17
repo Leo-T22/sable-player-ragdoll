@@ -6,11 +6,8 @@ import dev.leo.sableplayerragdoll.api.RagdollEndEvent;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.physics.handle.RigidBodyHandle;
-import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
-import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3ic;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
-import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.plot.ServerLevelPlot;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.UUID;
@@ -108,30 +105,25 @@ public final class RagdollExpireHelper {
    }
 
    @Nullable
-   private static Vec3 releasePosition(ServerLevel level, ServerSubLevel headSubLevel) {
-      ServerSubLevel source = torsoPart(level, headSubLevel);
+   private static Vec3 releasePosition(ServerLevel level, ServerSubLevel rootSubLevel) {
+      ServerSubLevel source = torsoPart(level, rootSubLevel);
       if (source.getPlot() == null) return null;
       return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(source.getPlot().getCenterBlock())).add(0.0, 0.5, 0.0);
    }
 
    @Nullable
-   private static Vec3 sublevelVelocityAsBlocksPerTick(ServerLevel level, ServerSubLevel headSubLevel) {
+   private static Vec3 sublevelVelocityAsBlocksPerTick(ServerLevel level, ServerSubLevel rootSubLevel) {
       SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
       if (physicsSystem == null) return null;
-      ServerSubLevel source = torsoPart(level, headSubLevel);
+      ServerSubLevel source = torsoPart(level, rootSubLevel);
       RigidBodyHandle handle = physicsSystem.getPhysicsHandle(source);
       if (handle == null || !handle.isValid()) return null;
       Vector3d vel = handle.getLinearVelocity(new Vector3d());
       return new Vec3(vel.x / 20.0, vel.y / 20.0, vel.z / 20.0);
    }
 
-   private static ServerSubLevel torsoPart(ServerLevel level, ServerSubLevel headSubLevel) {
-      UUID torsoId = RagdollAssemblyHelper.linkedTorso(headSubLevel.getUniqueId());
-      if (torsoId == null) return headSubLevel;
-      SubLevelContainer container = SubLevelContainer.getContainer(level);
-      if (!(container instanceof ServerSubLevelContainer serverContainer)) return headSubLevel;
-      SubLevel torso = serverContainer.getSubLevel(torsoId);
-      return torso instanceof ServerSubLevel serverTorso && !serverTorso.isRemoved() ? serverTorso : headSubLevel;
+   private static ServerSubLevel torsoPart(ServerLevel level, ServerSubLevel rootSubLevel) {
+      return rootSubLevel;
    }
 
    private static void discardSeatEntities(ServerLevel level, ServerSubLevel subLevel) {

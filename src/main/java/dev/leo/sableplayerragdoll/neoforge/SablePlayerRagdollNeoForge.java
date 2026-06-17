@@ -9,7 +9,9 @@ import com.mojang.authlib.yggdrasil.ProfileResult;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.RagdollItemTags;
 import dev.leo.sableplayerragdoll.RagdollGrabCallbacks;
+import dev.leo.sableplayerragdoll.RagdollPoseRequestCallbacks;
 import dev.leo.sableplayerragdoll.RagdollSeatCallbacks;
+import dev.leo.sableplayerragdoll.api.RagdollAsyncPoseRequests;
 import dev.leo.sableplayerragdoll.RagdollSoundEvents;
 import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
 import dev.leo.sableplayerragdoll.SablePlayerRagdollBootstrap;
@@ -106,6 +108,7 @@ public final class SablePlayerRagdollNeoForge {
       modBus.addListener(SablePlayerRagdollNeoForge::onCommonSetup);
       modBus.addListener(SablePlayerRagdollNeoForge::registerAttributes);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onLevelTick);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityMount);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockPlaced);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockBreak);
@@ -135,6 +138,10 @@ public final class SablePlayerRagdollNeoForge {
       }
    }
 
+   private static void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
+      RagdollAsyncPoseRequests.tick(uuid -> event.getServer().getPlayerList().getPlayer(uuid));
+   }
+
    @SuppressWarnings("unchecked")
    private static void onCommonSetup(FMLCommonSetupEvent event) {
       event.enqueueWork(() -> {
@@ -145,8 +152,8 @@ public final class SablePlayerRagdollNeoForge {
          RagdollSeatEntities.bindRagdollDoll((EntityType<RagdollDollEntity>) RagdollBlockRegistration.RAGDOLL_DOLL_ENTITY.get());
          RagdollSoundEvents.bindRagdollImpact(RagdollBlockRegistration.RAGDOLL_IMPACT_SOUND.get());
          RagdollSoundEvents.bindRagdollSmallImpact(RagdollBlockRegistration.RAGDOLL_SMALL_IMPACT_SOUND.get());
-         RagdollSeatCallbacks.setOnAutoSeated(RagdollNetworking::notifyAutoSeated);
          RagdollSeatCallbacks.setOnReleased(RagdollNetworking::notifyReleased);
+         RagdollPoseRequestCallbacks.setOnRequestPose(RagdollNetworking::notifyRequestPose);
          RagdollGrabCallbacks.setOnGrabbed(RagdollNetworking::notifyGrabStarted);
          RagdollGrabCallbacks.setOnReleased(RagdollNetworking::notifyGrabEnded);
          SablePlayerRagdollBootstrap.init();
@@ -196,8 +203,8 @@ public final class SablePlayerRagdollNeoForge {
                && event.getEntity() instanceof ServerPlayer attacker) {
             SubLevel subLevel = Sable.HELPER.getContaining(level, event.getPos());
             if (subLevel != null) {
-               UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
-               if (headId != null) pipeAttack(level, headId, attacker);
+               UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
+               if (rootId != null) pipeAttack(level, rootId, attacker);
             }
          }
          return;
@@ -220,15 +227,15 @@ public final class SablePlayerRagdollNeoForge {
          BlockPos ragdollPos = targetIsRagdoll ? target : event.getPos();
          SubLevel subLevel = Sable.HELPER.getContaining(level, ragdollPos);
          if (subLevel != null) {
-            UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
-            if (headId != null) {
-               RagdollInteractEvent interactEvent = new RagdollInteractEvent(player, headId, subLevel.getUniqueId(), ragdollPos, level);
+            UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
+            if (rootId != null) {
+               RagdollInteractEvent interactEvent = new RagdollInteractEvent(player, rootId, subLevel.getUniqueId(), ragdollPos, level);
                if (NeoForge.EVENT_BUS.post(interactEvent).isCanceled()) {
                   event.setCancellationResult(InteractionResult.SUCCESS);
                   event.setCanceled(true);
                   return;
                }
-               InteractionResult piped = pipeInteract(level, headId, player, event.getHand());
+               InteractionResult piped = pipeInteract(level, rootId, player, event.getHand());
                event.setCancellationResult(piped != null ? piped : InteractionResult.FAIL);
                event.setCanceled(true);
                return;
@@ -284,11 +291,11 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    @javax.annotation.Nullable
-   private static InteractionResult pipeInteract(ServerLevel level, UUID headId, ServerPlayer clickingPlayer, InteractionHand hand) {
-      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
-      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return null;
-      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
-      if (ragdollPlayerId == null) return null;
+   private static InteractionResult pipeInteract(ServerLevel level, UUID rootId, ServerPlayer clickingPlayer, InteractionHand hand) {
+      SubLevel rootSubLevel = SubLevelContainer.getContainer(level).getSubLevel(rootId);
+      if (!(rootSubLevel instanceof ServerSubLevel serverRoot)) return null;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverRoot);
+      if (ragdollPlayerId == null || ragdollPlayerId.equals(clickingPlayer.getUUID())) return null;
       Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
       if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return null;
       RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(true);
@@ -299,11 +306,13 @@ public final class SablePlayerRagdollNeoForge {
       }
    }
 
-   private static void pipeAttack(ServerLevel level, UUID headId, ServerPlayer attacker) {
-      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
-      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return;
-      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
-      if (ragdollPlayerId == null) return;
+   private static void pipeAttack(ServerLevel level, UUID rootId, ServerPlayer attacker) {
+      SubLevel rootSubLevel = SubLevelContainer.getContainer(level).getSubLevel(rootId);
+      if (!(rootSubLevel instanceof ServerSubLevel serverRoot)) return;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverRoot);
+      // A player riding their own ragdoll can have its parts directly under their crosshair — without this guard,
+      // their own clicks pipe through as a self-attack (damage + hurt sound) on themselves.
+      if (ragdollPlayerId == null || ragdollPlayerId.equals(attacker.getUUID())) return;
       Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
       if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return;
       RagdollSessionManager.RAGDOLL_PIPE_ACTIVE.set(true);
@@ -321,19 +330,21 @@ public final class SablePlayerRagdollNeoForge {
 
       SubLevel subLevel = Sable.HELPER.getContaining(level, hit.getBlockPos());
       if (subLevel == null) return;
-      UUID headId = RagdollAssemblyHelper.linkedHead(subLevel.getUniqueId());
-      if (headId == null) return;
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
+      if (rootId == null) return;
 
-      if (pipeProjectile(level, headId, event.getProjectile())) {
+      if (pipeProjectile(level, rootId, event.getProjectile())) {
          event.setCanceled(true);
       }
    }
 
-   private static boolean pipeProjectile(ServerLevel level, UUID headId, Projectile projectile) {
-      SubLevel headSubLevel = SubLevelContainer.getContainer(level).getSubLevel(headId);
-      if (!(headSubLevel instanceof ServerSubLevel serverHead)) return false;
-      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverHead);
+   private static boolean pipeProjectile(ServerLevel level, UUID rootId, Projectile projectile) {
+      SubLevel rootSubLevel = SubLevelContainer.getContainer(level).getSubLevel(rootId);
+      if (!(rootSubLevel instanceof ServerSubLevel serverRoot)) return false;
+      UUID ragdollPlayerId = RagdollSessionManager.getPlayerId(serverRoot);
       if (ragdollPlayerId == null) return false;
+      Entity owner = projectile.getOwner();
+      if (owner != null && ragdollPlayerId.equals(owner.getUUID())) return false;
       Entity ragdolledEntity = level.getEntity(ragdollPlayerId);
       if (!(ragdolledEntity instanceof ServerPlayer ragdolledPlayer) || !ragdolledPlayer.isAlive()) return false;
 
@@ -374,7 +385,7 @@ public final class SablePlayerRagdollNeoForge {
 
    private static boolean isRagdolled(ServerLevel level, ServerPlayer player) {
       ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
-      return ragdoll != null && RagdollAssemblyHelper.linkedTorso(ragdoll.getUniqueId()) != null;
+      return ragdoll != null; // root IS the torso
    }
 
    private static void onRegisterCommands(RegisterCommandsEvent event) {
@@ -604,9 +615,7 @@ public final class SablePlayerRagdollNeoForge {
 
    private static void equipTorso(ServerLevel level, PlayerlessRagdollSession session, ItemStack stack) {
       if (session == null) return;
-      UUID torsoId = RagdollAssemblyHelper.linkedTorso(session.id());
-      if (torsoId == null) return;
-      SubLevel torsoSubLevel = SubLevelContainer.getContainer(level).getSubLevel(torsoId);
+      SubLevel torsoSubLevel = SubLevelContainer.getContainer(level).getSubLevel(session.id());
       if (torsoSubLevel == null) return;
       if (torsoSubLevel.getLevel().getBlockEntity(torsoSubLevel.getPlot().getCenterBlock()) instanceof RagdollPartBlockEntity part) {
          part.setItemForSlot(EquipmentSlot.CHEST, stack);

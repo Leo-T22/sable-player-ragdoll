@@ -98,12 +98,12 @@ repositories {
 }
 
 dependencies {
-    compileOnly group: 'org.spongepowered', name: 'mixin', version: '0.8.5'
+    compileOnly 'org.spongepowered:mixin:0.8.5'
 
     compileOnly("dev.ryanhcode.sable-companion:sable-companion-common-${minecraft_version}:${sable_companion_version}")
 
-    compileOnly group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.4.1'
-    annotationProcessor group: 'io.github.llamalad7', name: 'mixinextras-common', version: '0.3.5'
+    compileOnly 'io.github.llamalad7:mixinextras-common:0.4.1'
+    annotationProcessor 'io.github.llamalad7:mixinextras-common:0.3.5'
 
     implementation("dev.ryanhcode.sable:sable-neoforge-${minecraft_version}:${sable_version}") {
         exclude group: 'foundry.veil'

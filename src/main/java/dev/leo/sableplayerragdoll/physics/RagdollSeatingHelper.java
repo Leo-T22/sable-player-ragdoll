@@ -1,6 +1,5 @@
 package dev.leo.sableplayerragdoll.physics;
 
-import dev.leo.sableplayerragdoll.RagdollSeatCallbacks;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.block.RagdollSeatBlock;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
@@ -32,7 +31,6 @@ public final class RagdollSeatingHelper {
             if (entity instanceof ServerPlayer player) {
                PLAYER_PREVIOUS_INVISIBILITY.putIfAbsent(player.getUUID(), player.isInvisible());
                player.setInvisible(true);
-               RagdollSeatCallbacks.notifyAutoSeated(player);
             }
             if (RagdollSettings.debugLogging()) {
                SablePlayerRagdoll.LOGGER.info(

@@ -21,9 +21,9 @@ final class RagdollAccessoriesEquipmentHelper {
       capture(player, true).forEach(part::setAccessoriesItems);
    }
 
-   static void applyFrom(ServerLevel level, UUID headId, Player player) {
+   static void applyFrom(ServerLevel level, UUID rootId, Player player) {
       Map<String, List<ItemStack>> items = capture(player, true);
-      RagdollEquipmentHelper.applyToAllParts(level, headId, be -> items.forEach(be::setAccessoriesItems));
+      RagdollEquipmentHelper.applyToAllParts(level, rootId, be -> items.forEach(be::setAccessoriesItems));
    }
 
    static Map<String, List<ItemStack>> capture(Player player) {

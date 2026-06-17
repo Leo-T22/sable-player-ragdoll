@@ -64,11 +64,11 @@ public final class RagdollAssemblyHelper {
    };
    private static final Map<BodyPart, PartSpawn> PART_BY_BODY = buildPartIndex();
    private static final List<PhysicsConstraintHandle> ACTIVE_CONSTRAINTS = new ArrayList<>();
-   private static final Map<UUID, Map<BodyPart, RagdollJoint>> JOINTS_BY_HEAD = new ConcurrentHashMap<>();
-   private static final Map<UUID, List<UUID>> DOLL_PARTS_BY_HEAD = new ConcurrentHashMap<>();
+   private static final Map<UUID, Map<BodyPart, RagdollJoint>> JOINTS_BY_ROOT = new ConcurrentHashMap<>();
+   private static final Map<UUID, List<UUID>> DOLL_PARTS_BY_ROOT = new ConcurrentHashMap<>();
    private static final Map<UUID, BodyPart> BODY_PART_BY_SUBLEVEL = new ConcurrentHashMap<>();
-   private static final Map<UUID, UUID> HEAD_BY_PART = new ConcurrentHashMap<>();
-   private static final Set<UUID> ELYTRA_HEADS = ConcurrentHashMap.newKeySet();
+   private static final Map<UUID, UUID> ROOT_BY_PART = new ConcurrentHashMap<>();
+   private static final Set<UUID> ELYTRA_ROOTS = ConcurrentHashMap.newKeySet();
 
    private RagdollAssemblyHelper() {
    }
@@ -126,51 +126,61 @@ public final class RagdollAssemblyHelper {
    ) {
       pruneInactiveConstraints();
       Map<BodyPart, SpawnedPart> spawnedParts = new EnumMap<>(BodyPart.class);
-      Quaterniond orientation = orientationFromBasis(right, up, forward);
+      Quaterniond bodyOrientation = orientationFromBasis(right, up, forward);
 
-      // Pass 1: assemble all parts at safe positions
+      BlockPos basePos = BlockPos.containing(baseCenter);
       for (int i = 0; i < PARTS.length; i++) {
          PartSpawn part = PARTS[i];
-         Vec3 desiredCenter = baseCenter.add(right.scale(part.rightOffset())).add(up.scale(part.upOffset()));
-         BlockPos desiredPos = BlockPos.containing(desiredCenter);
-         BlockPos safePos = new BlockPos(desiredPos.getX(), level.getMaxBuildHeight() - 1 - i, desiredPos.getZ());
+         BlockPos safePos = new BlockPos(basePos.getX(), level.getMaxBuildHeight() - 1 - i, basePos.getZ());
          ServerSubLevel subLevel = assemblePart(level, safePos, part, profile, equipmentSource);
          if (subLevel != null) {
-            spawnedParts.put(part.bodyPart(), new SpawnedPart(subLevel, desiredCenter, subLevel.getPlot().getCenterBlock(), part.rightOffset()));
+            spawnedParts.put(part.bodyPart(), new SpawnedPart(subLevel, baseCenter, subLevel.getPlot().getCenterBlock(), rightOffset(part, limbs.get(part.bodyPart()))));
          }
       }
 
-      SpawnedPart head = spawnedParts.get(BodyPart.HEAD);
-      if (head == null) {
+      SpawnedPart torsoRoot = spawnedParts.get(BodyPart.TORSO);
+      if (torsoRoot == null) {
          removeParts(level, spawnedParts.values().stream().map(SpawnedPart::subLevel).toList());
          return null;
       }
 
-      // Pass 2: move all assembled parts to final positions
+      PartSpawn torsoPart = PART_BY_BODY.get(BodyPart.TORSO);
+      Quaterniond torsoOrientation = spawnOrientation(bodyOrientation, torsoPart, limbs.get(BodyPart.TORSO));
+      Vec3 torsoCenter = baseCenter.add(up.scale(torsoPart.upOffset()));
+      movePartTo(level, torsoRoot.subLevel(), torsoCenter, torsoOrientation);
+
       for (PartSpawn part : PARTS) {
+         if (part.bodyPart() == BodyPart.TORSO) continue;
          SpawnedPart spawnedPart = spawnedParts.get(part.bodyPart());
-         if (spawnedPart != null) {
-            movePartTo(level, spawnedPart.subLevel(), spawnedPart.worldCenter(), partOrientation(orientation, part, limbs.get(part.bodyPart())));
-         }
+         if (spawnedPart == null) continue;
+         Quaterniond limbOrientation = spawnOrientation(bodyOrientation, part, limbs.get(part.bodyPart()));
+         JointAnchor anchor = jointAnchor(part.bodyPart(), spawnedPart.sideOffset() - torsoRoot.sideOffset());
+         Vector3d parentWorld = torsoOrientation.transform(new Vector3d(anchor.parentLocal()), new Vector3d());
+         Vector3d childWorld = limbOrientation.transform(new Vector3d(anchor.childLocal()), new Vector3d());
+         Vec3 limbCenter = torsoCenter.add(
+            parentWorld.x - childWorld.x,
+            parentWorld.y - childWorld.y,
+            parentWorld.z - childWorld.z
+         );
+         movePartTo(level, spawnedPart.subLevel(), limbCenter, limbOrientation);
       }
 
-      // Pass 3: attach constraints — all parts are now at final positions
       int constraints = attachSpawnedParts(level, spawnedParts, suppressLegContacts, limbs);
       List<ServerSubLevel> subLevels = spawnedParts.values().stream().map(SpawnedPart::subLevel).toList();
-      UUID headId = head.subLevel().getUniqueId();
-      DOLL_PARTS_BY_HEAD.put(headId, subLevels.stream().map(ServerSubLevel::getUniqueId).toList());
+      UUID rootId = torsoRoot.subLevel().getUniqueId();
+      DOLL_PARTS_BY_ROOT.put(rootId, subLevels.stream().map(ServerSubLevel::getUniqueId).toList());
       if (suppressLegContacts) {
-         ELYTRA_HEADS.add(headId);
+         ELYTRA_ROOTS.add(rootId);
       }
 
       spawnedParts.forEach((bodyPart, spawnedPart) -> {
          UUID partId = spawnedPart.subLevel().getUniqueId();
          BODY_PART_BY_SUBLEVEL.put(partId, bodyPart);
-         HEAD_BY_PART.put(partId, headId);
+         ROOT_BY_PART.put(partId, rootId);
       });
       Map<BodyPart, UUID> partSubLevelIds = new EnumMap<>(BodyPart.class);
       spawnedParts.forEach((bodyPart, spawnedPart) -> partSubLevelIds.put(bodyPart, spawnedPart.subLevel().getUniqueId()));
-      return new Doll(head.subLevel(), subLevels, partSubLevelIds, constraints);
+      return new Doll(torsoRoot.subLevel(), subLevels, partSubLevelIds, constraints);
    }
 
    public static @Nullable Doll spawn(ServerLevel level, ServerPlayer player, Vec3 baseCenter, Vec3 right) {
@@ -178,24 +188,24 @@ public final class RagdollAssemblyHelper {
       return spawn(level, player, baseCenter, right, forward);
    }
 
-   public static List<UUID> consumeLinkedParts(UUID headId) {
-      List<UUID> partIds = DOLL_PARTS_BY_HEAD.remove(headId);
-      ELYTRA_HEADS.remove(headId);
-      List<UUID> linkedParts = partIds == null ? List.of(headId) : partIds;
+   public static List<UUID> consumeLinkedParts(UUID rootId) {
+      List<UUID> partIds = DOLL_PARTS_BY_ROOT.remove(rootId);
+      ELYTRA_ROOTS.remove(rootId);
+      List<UUID> linkedParts = partIds == null ? List.of(rootId) : partIds;
       linkedParts.forEach(BODY_PART_BY_SUBLEVEL::remove);
-      linkedParts.forEach(HEAD_BY_PART::remove);
-      JOINTS_BY_HEAD.remove(headId);
-      RagdollMotorEffects.clear(headId);
+      linkedParts.forEach(ROOT_BY_PART::remove);
+      JOINTS_BY_ROOT.remove(rootId);
+      RagdollMotorEffects.clear(rootId);
       return linkedParts;
    }
 
-   public static List<UUID> linkedParts(UUID headId) {
-      List<UUID> partIds = DOLL_PARTS_BY_HEAD.get(headId);
-      return partIds == null ? List.of(headId) : partIds;
+   public static List<UUID> linkedParts(UUID rootId) {
+      List<UUID> partIds = DOLL_PARTS_BY_ROOT.get(rootId);
+      return partIds == null ? List.of(rootId) : partIds;
    }
 
-   public static Map<BodyPart, UUID> linkedPartsAsMap(UUID headId) {
-      List<UUID> parts = linkedParts(headId);
+   public static Map<BodyPart, UUID> linkedPartsAsMap(UUID rootId) {
+      List<UUID> parts = linkedParts(rootId);
       Map<BodyPart, UUID> result = new EnumMap<>(BodyPart.class);
       for (UUID partId : parts) {
          BodyPart bodyPart = BODY_PART_BY_SUBLEVEL.get(partId);
@@ -204,31 +214,30 @@ public final class RagdollAssemblyHelper {
       return result;
    }
 
-   public static @Nullable UUID linkedTorso(UUID headId) {
-      for (UUID partId : linkedParts(headId)) {
-         if (BODY_PART_BY_SUBLEVEL.get(partId) == BodyPart.TORSO) {
+   public static @Nullable UUID linkedHeadPart(UUID rootId) {
+      for (UUID partId : linkedParts(rootId)) {
+         if (BODY_PART_BY_SUBLEVEL.get(partId) == BodyPart.HEAD) {
             return partId;
          }
       }
-
       return null;
    }
 
-   public static @Nullable UUID linkedHead(UUID partId) {
-      return HEAD_BY_PART.get(partId);
+   public static @Nullable UUID linkedRoot(UUID partId) {
+      return ROOT_BY_PART.get(partId);
    }
 
    public static boolean isRagdollPart(UUID subLevelId) {
-      return HEAD_BY_PART.containsKey(subLevelId);
+      return ROOT_BY_PART.containsKey(subLevelId);
    }
 
    public static boolean isElytraRagdollPart(UUID subLevelId) {
-      UUID headId = HEAD_BY_PART.get(subLevelId);
-      return headId != null && ELYTRA_HEADS.contains(headId);
+      UUID rootId = ROOT_BY_PART.get(subLevelId);
+      return rootId != null && ELYTRA_ROOTS.contains(rootId);
    }
 
-   public static Map<BodyPart, RagdollJoint> joints(UUID headId) {
-      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_HEAD.get(headId);
+   public static Map<BodyPart, RagdollJoint> joints(UUID rootId) {
+      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.get(rootId);
       return joints == null ? Map.of() : Map.copyOf(joints);
    }
 
@@ -241,22 +250,22 @@ public final class RagdollAssemblyHelper {
          }
       }
 
-      ServerSubLevel head = subLevels.get(BodyPart.HEAD);
-      if (head == null) {
+      ServerSubLevel torsoRoot = subLevels.get(BodyPart.TORSO);
+      if (torsoRoot == null) {
          return null;
       }
 
       attachSpawnedParts(level, parts, false, limbs);
-      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_HEAD.get(head.getUniqueId());
+      UUID rootId = torsoRoot.getUniqueId();
+      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.get(rootId);
       PhysicsConstraintHandle representative = joints == null || joints.isEmpty() ? null : joints.values().iterator().next().handle();
 
       List<ServerSubLevel> restoredSubLevels = parts.values().stream().map(SpawnedPart::subLevel).toList();
-      UUID headId = head.getUniqueId();
-      DOLL_PARTS_BY_HEAD.put(headId, restoredSubLevels.stream().map(ServerSubLevel::getUniqueId).toList());
+      DOLL_PARTS_BY_ROOT.put(rootId, restoredSubLevels.stream().map(ServerSubLevel::getUniqueId).toList());
       parts.forEach((bodyPart, spawnedPart) -> {
          UUID partId = spawnedPart.subLevel().getUniqueId();
          BODY_PART_BY_SUBLEVEL.put(partId, bodyPart);
-         HEAD_BY_PART.put(partId, headId);
+         ROOT_BY_PART.put(partId, rootId);
       });
       return representative;
    }
@@ -316,38 +325,37 @@ public final class RagdollAssemblyHelper {
          return 0;
       }
 
-      RagdollLimbConfig head = limbs.get(BodyPart.HEAD);
-      UUID headId = parts.get(BodyPart.HEAD) == null ? null : parts.get(BodyPart.HEAD).subLevel().getUniqueId();
+      RagdollLimbConfig headConfig = limbs.get(BodyPart.HEAD);
+      UUID rootId = torso.subLevel().getUniqueId();
+      SpawnedPart head = parts.get(BodyPart.HEAD);
+      JointAnchor neck = jointAnchor(BodyPart.HEAD, 0.0);
       int constraints = 0;
       constraints += attach(
-         headId,
+         rootId,
          BodyPart.HEAD,
          physicsSystem,
          torso,
-         parts.get(BodyPart.HEAD),
-         plotAnchor(torso, 0.5, NECK_TORSO_Y, 0.5),
-         partPlotAnchor(parts.get(BodyPart.HEAD), 0.5, NECK_HEAD_Y, 0.5),
-         stiffness(head, NECK_ANGULAR_STIFFNESS),
-         damping(head, NECK_ANGULAR_DAMPING),
-         limbRotationRadians(BodyPart.HEAD, head),
+         head,
+         plotAnchorLocal(torso, neck.parentLocal()),
+         head == null ? new Vector3d() : plotAnchorLocal(head, neck.childLocal()),
+         stiffness(headConfig, NECK_ANGULAR_STIFFNESS),
+         damping(headConfig, NECK_ANGULAR_DAMPING),
+         limbRotationRadians(BodyPart.HEAD, headConfig),
          "neck"
       );
-      constraints += attachSideLimb(headId, physicsSystem, torso, BodyPart.LEFT_ARM, parts.get(BodyPart.LEFT_ARM), SHOULDER_Y, ARM_SHOULDER_Y, true, limbs.get(BodyPart.LEFT_ARM), "left shoulder");
-      constraints += attachSideLimb(headId, physicsSystem, torso, BodyPart.RIGHT_ARM, parts.get(BodyPart.RIGHT_ARM), SHOULDER_Y, ARM_SHOULDER_Y, true, limbs.get(BodyPart.RIGHT_ARM), "right shoulder");
-      constraints += attachSideLimb(headId, physicsSystem, torso, BodyPart.LEFT_LEG, parts.get(BodyPart.LEFT_LEG), HIP_TORSO_Y, HIP_LEG_Y, false, limbs.get(BodyPart.LEFT_LEG), "left hip");
-      constraints += attachSideLimb(headId, physicsSystem, torso, BodyPart.RIGHT_LEG, parts.get(BodyPart.RIGHT_LEG), HIP_TORSO_Y, HIP_LEG_Y, false, limbs.get(BodyPart.RIGHT_LEG), "right hip");
+      constraints += attachSideLimb(rootId, physicsSystem, torso, BodyPart.LEFT_ARM, parts.get(BodyPart.LEFT_ARM), limbs.get(BodyPart.LEFT_ARM), "left shoulder");
+      constraints += attachSideLimb(rootId, physicsSystem, torso, BodyPart.RIGHT_ARM, parts.get(BodyPart.RIGHT_ARM), limbs.get(BodyPart.RIGHT_ARM), "right shoulder");
+      constraints += attachSideLimb(rootId, physicsSystem, torso, BodyPart.LEFT_LEG, parts.get(BodyPart.LEFT_LEG), limbs.get(BodyPart.LEFT_LEG), "left hip");
+      constraints += attachSideLimb(rootId, physicsSystem, torso, BodyPart.RIGHT_LEG, parts.get(BodyPart.RIGHT_LEG), limbs.get(BodyPart.RIGHT_LEG), "right hip");
       return constraints;
    }
 
    private static int attachSideLimb(
-      @Nullable UUID headId,
+      @Nullable UUID rootId,
       SubLevelPhysicsSystem physicsSystem,
       SpawnedPart torso,
       BodyPart bodyPart,
       SpawnedPart limb,
-      double torsoY,
-      double limbY,
-      boolean anchorAtLimbCenter,
       @Nullable RagdollLimbConfig config,
       String name
    ) {
@@ -355,19 +363,15 @@ public final class RagdollAssemblyHelper {
          return 0;
       }
 
-      double torsoScale = anchorAtLimbCenter ? 1.0 : 0.5;
-      double limbScale = anchorAtLimbCenter ? 0.0 : 0.5;
-      double sideOffset = limb.sideOffset() - torso.sideOffset();
-      double torsoX = 0.5 + sideOffset * torsoScale;
-      double limbX = 0.44 - sideOffset * limbScale;
+      JointAnchor anchor = jointAnchor(bodyPart, limb.sideOffset() - torso.sideOffset());
       return attach(
-         headId,
+         rootId,
          bodyPart,
          physicsSystem,
          torso,
          limb,
-         plotAnchor(torso, torsoX, torsoY, 0.5),
-         plotAnchor(limb, limbX, limbY, 0.5),
+         plotAnchorLocal(torso, anchor.parentLocal()),
+         plotAnchorLocal(limb, anchor.childLocal()),
          stiffness(config, LIMB_ANGULAR_STIFFNESS),
          damping(config, LIMB_ANGULAR_DAMPING),
          limbRotationRadians(bodyPart, config),
@@ -384,7 +388,7 @@ public final class RagdollAssemblyHelper {
    }
 
    private static int attach(
-      @Nullable UUID headId,
+      @Nullable UUID rootId,
       BodyPart bodyPart,
       SubLevelPhysicsSystem physicsSystem,
       SpawnedPart first,
@@ -411,8 +415,8 @@ public final class RagdollAssemblyHelper {
          PhysicsConstraintHandle handle = SableConstraintCompat.addConstraint(physicsSystem.getPipeline(), first.subLevel(), second.subLevel(), config);
          handle.setContactsEnabled(RagdollSettings.partSelfCollision());
          ACTIVE_CONSTRAINTS.add(handle);
-         if (headId != null) {
-            JOINTS_BY_HEAD.computeIfAbsent(headId, unused -> new EnumMap<>(BodyPart.class))
+         if (rootId != null) {
+            JOINTS_BY_ROOT.computeIfAbsent(rootId, unused -> new EnumMap<>(BodyPart.class))
                .put(bodyPart, new RagdollJoint(handle, new Vector3d(angularTarget), angularStiffness, angularDamping));
          }
 
@@ -428,12 +432,28 @@ public final class RagdollAssemblyHelper {
       }
    }
 
-   private static Vector3d partPlotAnchor(SpawnedPart part, double x, double y, double z) {
-      return part == null ? new Vector3d() : plotAnchor(part, x, y, z);
+   private static JointAnchor jointAnchor(BodyPart part, double sideOffset) {
+      return switch (part) {
+         case HEAD -> new JointAnchor(centerLocal(0.5, NECK_TORSO_Y, 0.5), centerLocal(0.5, NECK_HEAD_Y, 0.5));
+         case LEFT_ARM, RIGHT_ARM -> new JointAnchor(
+            centerLocal(0.5 + sideOffset, SHOULDER_Y, 0.5),
+            centerLocal(0.44, ARM_SHOULDER_Y, 0.5)
+         );
+         case LEFT_LEG, RIGHT_LEG -> new JointAnchor(
+            centerLocal(0.5 + sideOffset * 0.5, HIP_TORSO_Y, 0.5),
+            centerLocal(0.44 - sideOffset * 0.5, HIP_LEG_Y, 0.5)
+         );
+         case TORSO -> new JointAnchor(centerLocal(0.5, 0.5, 0.5), centerLocal(0.5, 0.5, 0.5));
+      };
    }
 
-   private static Vector3d plotAnchor(SpawnedPart part, double x, double y, double z) {
-      return new Vector3d(part.plotPos().getX() + x, part.plotPos().getY() + y, part.plotPos().getZ() + z);
+   private static Vector3d centerLocal(double x, double y, double z) {
+      return new Vector3d(x - 0.5, y - 0.5, z - 0.5);
+   }
+
+   private static Vector3d plotAnchorLocal(SpawnedPart part, Vector3dc local) {
+      BlockPos plotPos = part.plotPos();
+      return new Vector3d(plotPos.getX() + 0.5 + local.x(), plotPos.getY() + 0.5 + local.y(), plotPos.getZ() + 0.5 + local.z());
    }
 
    private static void movePartTo(ServerLevel level, ServerSubLevel subLevel, Vec3 desiredCenter, Quaterniond orientation) {
@@ -466,13 +486,13 @@ public final class RagdollAssemblyHelper {
       return vector.lengthSqr() < 1.0E-6 ? fallback : vector.normalize();
    }
 
-   private static Quaterniond partOrientation(Quaterniond baseOrientation, PartSpawn part, @Nullable RagdollLimbConfig config) {
-      Vector3d r = limbRotationRadians(part, config);
+   private static Quaterniond spawnOrientation(Quaterniond baseOrientation, PartSpawn part, @Nullable RagdollLimbConfig config) {
+      Vector3d r = initialRotationRadians(part, config);
       return new Quaterniond(baseOrientation).rotateY(r.y).rotateX(r.x).rotateZ(r.z);
    }
 
    // Resolves a limb's rest rotation (radians) as (x=pitch, y=yaw, z=roll), part defaults overridden
-   // per-axis by the config. Used for both the spawn pose and the joint motor's rest target so they agree.
+   // per-axis by the config. This is the motor target the ragdoll settles toward after spawning.
    private static Vector3d limbRotationRadians(PartSpawn part, @Nullable RagdollLimbConfig config) {
       double pitch = 0.0;
       double yaw = part.yawOffset();
@@ -485,9 +505,25 @@ public final class RagdollAssemblyHelper {
       return new Vector3d(pitch, yaw, roll);
    }
 
+   private static Vector3d initialRotationRadians(PartSpawn part, @Nullable RagdollLimbConfig config) {
+      double pitch = 0.0;
+      double yaw = part.yawOffset();
+      double roll = part.rollOffset();
+      if (config != null) {
+         if (config.initialPitchDegrees().isPresent()) pitch = Math.toRadians(config.initialPitchDegrees().getAsDouble());
+         if (config.initialYawDegrees().isPresent()) yaw = Math.toRadians(config.initialYawDegrees().getAsDouble());
+         if (config.initialRollDegrees().isPresent()) roll = Math.toRadians(config.initialRollDegrees().getAsDouble());
+      }
+      return new Vector3d(pitch, yaw, roll);
+   }
+
    private static Vector3d limbRotationRadians(BodyPart bodyPart, @Nullable RagdollLimbConfig config) {
       PartSpawn part = PART_BY_BODY.get(bodyPart);
       return part == null ? new Vector3d() : limbRotationRadians(part, config);
+   }
+
+   private static double rightOffset(PartSpawn part, @Nullable RagdollLimbConfig config) {
+      return config != null && config.rightOffset().isPresent() ? config.rightOffset().getAsDouble() : part.rightOffset();
    }
 
    private static void removeParts(ServerLevel level, List<ServerSubLevel> subLevels) {
@@ -523,13 +559,16 @@ public final class RagdollAssemblyHelper {
       }
    }
 
-   public record Doll(ServerSubLevel headSubLevel, List<ServerSubLevel> allSubLevels, Map<BodyPart, UUID> partSubLevelIds, int constraints) {
+   public record Doll(ServerSubLevel rootSubLevel, List<ServerSubLevel> allSubLevels, Map<BodyPart, UUID> partSubLevelIds, int constraints) {
    }
 
    public record RagdollJoint(PhysicsConstraintHandle handle, Vector3dc baseTarget, double baseStiffness, double baseDamping) {
    }
 
    public record PartSpawn(String name, BodyPart bodyPart, double rightOffset, double upOffset, double yawOffset, double rollOffset) {
+   }
+
+   private record JointAnchor(Vector3d parentLocal, Vector3d childLocal) {
    }
 
    private record SpawnedPart(ServerSubLevel subLevel, Vec3 worldCenter, BlockPos plotPos, double sideOffset) {

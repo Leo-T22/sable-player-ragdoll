@@ -40,6 +40,7 @@ public final class RagdollBlockRegistration {
       "ragdoll_seat",
       () -> Builder.<RagdollSeatEntity>of(RagdollSeatEntity::new, MobCategory.MISC)
             .sized(0.25F, 0.35F)
+            .passengerAttachments(0.1F)
             .setShouldReceiveVelocityUpdates(false)
             .build("sable_player_ragdoll:ragdoll_seat")
    );

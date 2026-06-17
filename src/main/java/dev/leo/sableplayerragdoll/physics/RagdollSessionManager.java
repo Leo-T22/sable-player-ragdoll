@@ -337,7 +337,7 @@ public final class RagdollSessionManager {
    public static boolean isPlayerCurrentlyRagdolled(ServerPlayer player) {
       if (ACTIVE.isEmpty()) return false;
       ServerSubLevel ragdoll = activeRagdollForPlayer(player.serverLevel(), player.getUUID());
-      return ragdoll != null && RagdollAssemblyHelper.linkedTorso(ragdoll.getUniqueId()) != null;
+      return ragdoll != null;
    }
 
    private static double sampleSpeedMetersPerSecond(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
@@ -350,23 +350,23 @@ public final class RagdollSessionManager {
       return handle != null && handle.isValid() ? handle.getLinearVelocity(new Vector3d()) : null;
    }
 
-   private static void applyImpactDamage(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel headSubLevel) {
+   private static void applyImpactDamage(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel rootSubLevel) {
       if (!RagdollSettings.impactDamageEnabled()) return;
-      UUID playerId = getPlayerId(headSubLevel);
+      UUID playerId = getPlayerId(rootSubLevel);
       if (playerId == null) return;
       ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
       if (player == null || player.isDeadOrDying() || player.isSpectator()) return;
 
-      ImpactSample impact = sampleLargestLinkedVelocityDelta(level, physicsSystem, serverContainer, headSubLevel);
+      ImpactSample impact = sampleLargestLinkedVelocityDelta(level, physicsSystem, serverContainer, rootSubLevel);
       double delta = impact.delta();
       double feedbackThreshold = Math.min(RagdollSettings.impactFeedbackThreshold(), RagdollSettings.impactDamageThreshold());
       if (delta <= feedbackThreshold) return;
 
       long gameTime = level.getGameTime();
-      UUID headSubLevelId = headSubLevel.getUniqueId();
-      if (gameTime < NEXT_IMPACT_DAMAGE_TICKS.getOrDefault(headSubLevelId, Long.MIN_VALUE)) return;
+      UUID rootSubLevelId = rootSubLevel.getUniqueId();
+      if (gameTime < NEXT_IMPACT_DAMAGE_TICKS.getOrDefault(rootSubLevelId, Long.MIN_VALUE)) return;
 
-      NEXT_IMPACT_DAMAGE_TICKS.put(headSubLevelId, gameTime + (long) RagdollSettings.impactDamageCooldownTicks());
+      NEXT_IMPACT_DAMAGE_TICKS.put(rootSubLevelId, gameTime + (long) RagdollSettings.impactDamageCooldownTicks());
       Vec3 position = impact.position();
       spawnImpactParticles(level, position, delta, feedbackThreshold);
       double damageThreshold = RagdollSettings.impactDamageThreshold();
@@ -397,10 +397,10 @@ public final class RagdollSessionManager {
       level.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, position.x, position.y, position.z, count, spread, spread * 0.5, spread, speed);
    }
 
-   private static ImpactSample sampleLargestLinkedVelocityDelta(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel headSubLevel) {
+   private static ImpactSample sampleLargestLinkedVelocityDelta(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel rootSubLevel) {
       double largestDelta = 0.0;
-      Vec3 impactPosition = worldImpactPosition(level, headSubLevel);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(headSubLevel.getUniqueId())) {
+      Vec3 impactPosition = worldImpactPosition(level, rootSubLevel);
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootSubLevel.getUniqueId())) {
          SubLevel part = serverContainer.getSubLevel(partId);
          if (!(part instanceof ServerSubLevel partSubLevel) || partSubLevel.isRemoved()) {
             LAST_VELOCITIES.remove(partId);

@@ -9,14 +9,14 @@ import net.neoforged.bus.api.ICancellableEvent;
 
 public class RagdollInteractEvent extends Event implements ICancellableEvent {
    private final ServerPlayer player;
-   private final UUID headId;
+   private final UUID rootId;
    private final UUID partId;
    private final BlockPos pos;
    private final ServerLevel level;
 
-   public RagdollInteractEvent(ServerPlayer player, UUID headId, UUID partId, BlockPos pos, ServerLevel level) {
+   public RagdollInteractEvent(ServerPlayer player, UUID rootId, UUID partId, BlockPos pos, ServerLevel level) {
       this.player = player;
-      this.headId = headId;
+      this.rootId = rootId;
       this.partId = partId;
       this.pos = pos;
       this.level = level;
@@ -26,8 +26,8 @@ public class RagdollInteractEvent extends Event implements ICancellableEvent {
       return this.player;
    }
 
-   public UUID headId() {
-      return this.headId;
+   public UUID rootId() {
+      return this.rootId;
    }
 
    // The sublevel UUID of the specific body part that was right-clicked

@@ -31,11 +31,11 @@ public final class RagdollSavedData extends SavedData {
       ListTag ragdollList = tag.getList("Ragdolls", Tag.TAG_COMPOUND);
       for (int i = 0; i < ragdollList.size(); i++) {
          CompoundTag ragdollTag = ragdollList.getCompound(i);
-         if (!ragdollTag.hasUUID("Head")) {
+         if (!ragdollTag.hasUUID("Root")) {
             continue;
          }
 
-         UUID headId = ragdollTag.getUUID("Head");
+         UUID rootId = ragdollTag.getUUID("Root");
          Map<BodyPart, UUID> parts = new EnumMap<>(BodyPart.class);
          ListTag partList = ragdollTag.getList("Parts", Tag.TAG_COMPOUND);
          for (int partIndex = 0; partIndex < partList.size(); partIndex++) {
@@ -48,9 +48,9 @@ public final class RagdollSavedData extends SavedData {
             parts.put(bodyPart, partTag.getUUID("SubLevel"));
          }
 
-         if (parts.containsKey(BodyPart.HEAD)) {
-            data.ragdolls.put(headId, parts);
-            data.ragdollLimbs.put(headId, loadLimbOptions(ragdollTag));
+         if (parts.containsKey(BodyPart.TORSO)) {
+            data.ragdolls.put(rootId, parts);
+            data.ragdollLimbs.put(rootId, loadLimbOptions(ragdollTag));
          }
       }
 
@@ -68,6 +68,20 @@ public final class RagdollSavedData extends SavedData {
          if (limbTag.contains("Pitch")) cfg.pitch(limbTag.getDouble("Pitch"));
          if (limbTag.contains("Yaw")) cfg.yaw(limbTag.getDouble("Yaw"));
          if (limbTag.contains("Roll")) cfg.roll(limbTag.getDouble("Roll"));
+         if (limbTag.contains("InitialPitch") || limbTag.contains("InitialYaw") || limbTag.contains("InitialRoll")) {
+            cfg.initialRotation(
+               limbTag.contains("InitialPitch") ? limbTag.getDouble("InitialPitch") : 0.0,
+               limbTag.contains("InitialYaw") ? limbTag.getDouble("InitialYaw") : 0.0,
+               limbTag.contains("InitialRoll") ? limbTag.getDouble("InitialRoll") : 0.0
+            );
+         }
+         if (limbTag.contains("Right") || limbTag.contains("Up") || limbTag.contains("Forward")) {
+            cfg.offset(
+               limbTag.contains("Right") ? limbTag.getDouble("Right") : 0.0,
+               limbTag.contains("Up") ? limbTag.getDouble("Up") : 0.0,
+               limbTag.contains("Forward") ? limbTag.getDouble("Forward") : 0.0
+            );
+         }
          if (limbTag.contains("Stiffness")) cfg.stiffness(limbTag.getDouble("Stiffness"));
          if (limbTag.contains("Damping")) cfg.damping(limbTag.getDouble("Damping"));
          builder.limb(part, cfg);
@@ -75,34 +89,34 @@ public final class RagdollSavedData extends SavedData {
       return builder.build();
    }
 
-   public void saveRagdoll(UUID headSubLevelId, Map<BodyPart, UUID> partSubLevelIds, RagdollLimbOptions limbs) {
-      this.ragdolls.put(headSubLevelId, immutableCopy(partSubLevelIds));
-      this.ragdollLimbs.put(headSubLevelId, limbs);
+   public void saveRagdoll(UUID rootSubLevelId, Map<BodyPart, UUID> partSubLevelIds, RagdollLimbOptions limbs) {
+      this.ragdolls.put(rootSubLevelId, immutableCopy(partSubLevelIds));
+      this.ragdollLimbs.put(rootSubLevelId, limbs);
       this.setDirty();
    }
 
-   public void removeRagdoll(UUID headSubLevelId) {
-      boolean removed = this.ragdolls.remove(headSubLevelId) != null;
-      this.ragdollLimbs.remove(headSubLevelId);
+   public void removeRagdoll(UUID rootSubLevelId) {
+      boolean removed = this.ragdolls.remove(rootSubLevelId) != null;
+      this.ragdollLimbs.remove(rootSubLevelId);
       if (removed) this.setDirty();
    }
 
-   public Map<BodyPart, UUID> ragdoll(UUID headSubLevelId) {
-      Map<BodyPart, UUID> parts = this.ragdolls.get(headSubLevelId);
+   public Map<BodyPart, UUID> ragdoll(UUID rootSubLevelId) {
+      Map<BodyPart, UUID> parts = this.ragdolls.get(rootSubLevelId);
       return parts == null ? Map.of() : Collections.unmodifiableMap(parts);
    }
 
-   public RagdollLimbOptions ragdollLimbs(UUID headSubLevelId) {
-      RagdollLimbOptions limbs = this.ragdollLimbs.get(headSubLevelId);
+   public RagdollLimbOptions ragdollLimbs(UUID rootSubLevelId) {
+      RagdollLimbOptions limbs = this.ragdollLimbs.get(rootSubLevelId);
       return limbs == null ? RagdollLimbOptions.defaults() : limbs;
    }
 
    @Override
    public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
       ListTag ragdollList = new ListTag();
-      this.ragdolls.forEach((headId, parts) -> {
+      this.ragdolls.forEach((rootId, parts) -> {
          CompoundTag ragdollTag = new CompoundTag();
-         ragdollTag.putUUID("Head", headId);
+         ragdollTag.putUUID("Root", rootId);
          ListTag partList = new ListTag();
          parts.forEach((bodyPart, partId) -> {
             CompoundTag partTag = new CompoundTag();
@@ -111,7 +125,7 @@ public final class RagdollSavedData extends SavedData {
             partList.add(partTag);
          });
          ragdollTag.put("Parts", partList);
-         RagdollLimbOptions limbs = this.ragdollLimbs.get(headId);
+         RagdollLimbOptions limbs = this.ragdollLimbs.get(rootId);
          if (limbs != null && !limbs.isEmpty()) {
             ListTag limbList = new ListTag();
             for (BodyPart part : BodyPart.values()) {
@@ -122,6 +136,12 @@ public final class RagdollSavedData extends SavedData {
                cfg.pitchDegrees().ifPresent(v -> limbTag.putDouble("Pitch", v));
                cfg.yawDegrees().ifPresent(v -> limbTag.putDouble("Yaw", v));
                cfg.rollDegrees().ifPresent(v -> limbTag.putDouble("Roll", v));
+               cfg.initialPitchDegrees().ifPresent(v -> limbTag.putDouble("InitialPitch", v));
+               cfg.initialYawDegrees().ifPresent(v -> limbTag.putDouble("InitialYaw", v));
+               cfg.initialRollDegrees().ifPresent(v -> limbTag.putDouble("InitialRoll", v));
+               cfg.rightOffset().ifPresent(v -> limbTag.putDouble("Right", v));
+               cfg.upOffset().ifPresent(v -> limbTag.putDouble("Up", v));
+               cfg.forwardOffset().ifPresent(v -> limbTag.putDouble("Forward", v));
                cfg.angularStiffness().ifPresent(v -> limbTag.putDouble("Stiffness", v));
                cfg.angularDamping().ifPresent(v -> limbTag.putDouble("Damping", v));
                limbList.add(limbTag);

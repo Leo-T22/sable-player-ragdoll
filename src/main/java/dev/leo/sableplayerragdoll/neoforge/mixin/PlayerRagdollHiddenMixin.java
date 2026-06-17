@@ -41,10 +41,12 @@ public abstract class PlayerRagdollHiddenMixin {
         if (isHiddenRagdollSource()) ci.cancel();
     }
 
+    private static final float RAGDOLL_ANCHOR_EYE_HEIGHT = 1.62F;
+
     @Inject(method = "getDimensions", at = @At("HEAD"), cancellable = true)
     private void shrinkDimensions(Pose pose, CallbackInfoReturnable<EntityDimensions> cir) {
         if (isHiddenRagdollSource()) {
-            cir.setReturnValue(EntityDimensions.fixed(0.01F, 0.01F).withEyeHeight(0.0F));
+            cir.setReturnValue(EntityDimensions.fixed(0.01F, 0.01F).withEyeHeight(RAGDOLL_ANCHOR_EYE_HEIGHT));
         }
     }
 

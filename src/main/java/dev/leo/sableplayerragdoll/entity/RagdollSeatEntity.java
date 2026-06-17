@@ -1,9 +1,7 @@
 package dev.leo.sableplayerragdoll.entity;
 
+import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.RagdollSeatBlock;
-import dev.leo.sableplayerragdoll.physics.RagdollAssemblyHelper;
-import dev.ryanhcode.sable.Sable;
-import dev.ryanhcode.sable.sublevel.SubLevel;
 import java.util.Optional;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -20,7 +18,6 @@ import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.entity.IEntityWithComplexSpawn;
 
 public final class RagdollSeatEntity extends Entity implements IEntityWithComplexSpawn {
-   private static final double RAGDOLL_HEAD_RIDER_OFFSET = -1.25;
    private static final String ANCHOR_X_KEY = "AnchorX";
    private static final String ANCHOR_Y_KEY = "AnchorY";
    private static final String ANCHOR_Z_KEY = "AnchorZ";
@@ -51,13 +48,8 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
    protected void positionRider(Entity passenger, MoveFunction callback) {
       if (this.hasPassenger(passenger)) {
          double heightOffset = this.getPassengerRidingPosition(passenger).y - passenger.getVehicleAttachmentPoint(this).y;
-         callback.accept(passenger, this.getX(), 0.0625 + heightOffset + this.getRagdollHeadRiderOffset(), this.getZ());
+         callback.accept(passenger, this.getX(), heightOffset, this.getZ());
       }
-   }
-
-   private double getRagdollHeadRiderOffset() {
-      SubLevel subLevel = Sable.HELPER.getContaining(this);
-      return subLevel != null && RagdollAssemblyHelper.linkedTorso(subLevel.getUniqueId()) != null ? RAGDOLL_HEAD_RIDER_OFFSET : 0.0;
    }
 
    public void onPassengerTurned(Entity passenger) {
@@ -77,7 +69,8 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
          });
 
          if (!this.isVehicle()) {
-            if (!(this.level().getBlockState(this.blockPosition()).getBlock() instanceof RagdollSeatBlock)) {
+            var block = this.level().getBlockState(this.blockPosition()).getBlock();
+            if (!(block instanceof RagdollSeatBlock) && !(block instanceof RagdollPartBlock)) {
                this.discard();
             }
          }

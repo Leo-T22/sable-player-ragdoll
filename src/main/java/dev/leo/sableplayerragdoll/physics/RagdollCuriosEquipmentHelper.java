@@ -31,14 +31,14 @@ final class RagdollCuriosEquipmentHelper {
         }
     }
 
-    static void applyFrom(ServerLevel level, UUID headId, Player player) {
+    static void applyFrom(ServerLevel level, UUID rootId, Player player) {
         Map<String, List<ItemStack>> curioItems = capture(player);
         if (curioItems.isEmpty()) return;
 
         for (Map.Entry<String, List<ItemStack>> entry : curioItems.entrySet()) {
             String slotId = entry.getKey();
             List<ItemStack> items = entry.getValue();
-            RagdollEquipmentHelper.applyToAllParts(level, headId, be -> be.setCurioItems(slotId, items));
+            RagdollEquipmentHelper.applyToAllParts(level, rootId, be -> be.setCurioItems(slotId, items));
         }
     }
 

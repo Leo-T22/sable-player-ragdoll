@@ -147,28 +147,26 @@ public final class RagdollDeferredSync {
    }
 
    private static int launchLinkedParts(SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel rootSubLevel, PendingLaunch launch) {
-      UUID torsoId = RagdollAssemblyHelper.linkedTorso(rootSubLevel.getUniqueId());
+      UUID rootId = rootSubLevel.getUniqueId();
       if (launch.launchAllLinkedParts()) {
+         UUID headId = RagdollAssemblyHelper.linkedHeadPart(rootId);
          int launched = 0;
-         for (UUID partId : RagdollAssemblyHelper.linkedParts(rootSubLevel.getUniqueId())) {
+         for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
             if (serverContainer.getSubLevel(partId) instanceof ServerSubLevel partSubLevel && !partSubLevel.isRemoved()) {
                RagdollRegistry.wakePhysicsBody(physicsSystem, partSubLevel);
                physicsSystem.getPipeline().onStatsChanged(partSubLevel);
                RagdollRegistry.wakePhysicsBody(physicsSystem, partSubLevel);
-               double scale = LAUNCH_STRENGTH * (partId.equals(torsoId) ? 1.0 : LIMB_TRAIL_SCALE);
+               boolean spine = partId.equals(rootId) || partId.equals(headId);
+               double scale = LAUNCH_STRENGTH * (spine ? 1.0 : LIMB_TRAIL_SCALE);
                applyLaunchVelocity(physicsSystem, partSubLevel, launch, scale);
                launched++;
             }
          }
          if (launched > 0) return launched;
       }
-      if (torsoId != null && serverContainer.getSubLevel(torsoId) instanceof ServerSubLevel torsoSubLevel && !torsoSubLevel.isRemoved()) {
-         RagdollRegistry.wakePhysicsBody(physicsSystem, torsoSubLevel);
-         physicsSystem.getPipeline().onStatsChanged(torsoSubLevel);
-         RagdollRegistry.wakePhysicsBody(physicsSystem, torsoSubLevel);
-         applyLaunchVelocity(physicsSystem, torsoSubLevel, launch, LAUNCH_STRENGTH);
-         return 1;
-      }
+      RagdollRegistry.wakePhysicsBody(physicsSystem, rootSubLevel);
+      physicsSystem.getPipeline().onStatsChanged(rootSubLevel);
+      RagdollRegistry.wakePhysicsBody(physicsSystem, rootSubLevel);
       applyLaunchVelocity(physicsSystem, rootSubLevel, launch, LAUNCH_STRENGTH);
       return 1;
    }

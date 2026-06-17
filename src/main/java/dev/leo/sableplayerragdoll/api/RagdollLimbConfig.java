@@ -15,6 +15,12 @@ public final class RagdollLimbConfig {
    private final OptionalDouble pitchDegrees;
    private final OptionalDouble yawDegrees;
    private final OptionalDouble rollDegrees;
+   private final OptionalDouble initialPitchDegrees;
+   private final OptionalDouble initialYawDegrees;
+   private final OptionalDouble initialRollDegrees;
+   private final OptionalDouble rightOffset;
+   private final OptionalDouble upOffset;
+   private final OptionalDouble forwardOffset;
    private final OptionalDouble angularStiffness;
    private final OptionalDouble angularDamping;
 
@@ -22,12 +28,24 @@ public final class RagdollLimbConfig {
       OptionalDouble pitchDegrees,
       OptionalDouble yawDegrees,
       OptionalDouble rollDegrees,
+      OptionalDouble initialPitchDegrees,
+      OptionalDouble initialYawDegrees,
+      OptionalDouble initialRollDegrees,
+      OptionalDouble rightOffset,
+      OptionalDouble upOffset,
+      OptionalDouble forwardOffset,
       OptionalDouble angularStiffness,
       OptionalDouble angularDamping
    ) {
       this.pitchDegrees = pitchDegrees;
       this.yawDegrees = yawDegrees;
       this.rollDegrees = rollDegrees;
+      this.initialPitchDegrees = initialPitchDegrees;
+      this.initialYawDegrees = initialYawDegrees;
+      this.initialRollDegrees = initialRollDegrees;
+      this.rightOffset = rightOffset;
+      this.upOffset = upOffset;
+      this.forwardOffset = forwardOffset;
       this.angularStiffness = angularStiffness;
       this.angularDamping = angularDamping;
    }
@@ -42,6 +60,30 @@ public final class RagdollLimbConfig {
 
    public OptionalDouble rollDegrees() {
       return this.rollDegrees;
+   }
+
+   public OptionalDouble initialPitchDegrees() {
+      return this.initialPitchDegrees;
+   }
+
+   public OptionalDouble initialYawDegrees() {
+      return this.initialYawDegrees;
+   }
+
+   public OptionalDouble initialRollDegrees() {
+      return this.initialRollDegrees;
+   }
+
+   public OptionalDouble rightOffset() {
+      return this.rightOffset;
+   }
+
+   public OptionalDouble upOffset() {
+      return this.upOffset;
+   }
+
+   public OptionalDouble forwardOffset() {
+      return this.forwardOffset;
    }
 
    public OptionalDouble angularStiffness() {
@@ -60,6 +102,12 @@ public final class RagdollLimbConfig {
       private OptionalDouble pitchDegrees = OptionalDouble.empty();
       private OptionalDouble yawDegrees = OptionalDouble.empty();
       private OptionalDouble rollDegrees = OptionalDouble.empty();
+      private OptionalDouble initialPitchDegrees = OptionalDouble.empty();
+      private OptionalDouble initialYawDegrees = OptionalDouble.empty();
+      private OptionalDouble initialRollDegrees = OptionalDouble.empty();
+      private OptionalDouble rightOffset = OptionalDouble.empty();
+      private OptionalDouble upOffset = OptionalDouble.empty();
+      private OptionalDouble forwardOffset = OptionalDouble.empty();
       private OptionalDouble angularStiffness = OptionalDouble.empty();
       private OptionalDouble angularDamping = OptionalDouble.empty();
 
@@ -70,6 +118,13 @@ public final class RagdollLimbConfig {
          this.pitchDegrees = OptionalDouble.of(pitchDegrees);
          this.yawDegrees = OptionalDouble.of(yawDegrees);
          this.rollDegrees = OptionalDouble.of(rollDegrees);
+         return this;
+      }
+
+      public Builder initialRotation(double pitchDegrees, double yawDegrees, double rollDegrees) {
+         this.initialPitchDegrees = OptionalDouble.of(pitchDegrees);
+         this.initialYawDegrees = OptionalDouble.of(yawDegrees);
+         this.initialRollDegrees = OptionalDouble.of(rollDegrees);
          return this;
       }
 
@@ -88,6 +143,13 @@ public final class RagdollLimbConfig {
          return this;
       }
 
+      public Builder offset(double right, double up, double forward) {
+         this.rightOffset = OptionalDouble.of(right);
+         this.upOffset = OptionalDouble.of(up);
+         this.forwardOffset = OptionalDouble.of(forward);
+         return this;
+      }
+
       public Builder stiffness(double angularStiffness) {
          this.angularStiffness = OptionalDouble.of(angularStiffness);
          return this;
@@ -99,7 +161,19 @@ public final class RagdollLimbConfig {
       }
 
       public RagdollLimbConfig build() {
-         return new RagdollLimbConfig(this.pitchDegrees, this.yawDegrees, this.rollDegrees, this.angularStiffness, this.angularDamping);
+         return new RagdollLimbConfig(
+            this.pitchDegrees,
+            this.yawDegrees,
+            this.rollDegrees,
+            this.initialPitchDegrees,
+            this.initialYawDegrees,
+            this.initialRollDegrees,
+            this.rightOffset,
+            this.upOffset,
+            this.forwardOffset,
+            this.angularStiffness,
+            this.angularDamping
+         );
       }
    }
 }

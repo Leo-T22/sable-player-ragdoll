@@ -35,7 +35,10 @@ public final class RagdollKeybinds {
    private static void onClientTick(Post event) {
       while (RAGDOLL_KEY.consumeClick()) {
          if (Minecraft.getInstance().player != null) {
-            PacketDistributor.sendToServer(new RagdollTriggerPacket(), new CustomPacketPayload[0]);
+            PacketDistributor.sendToServer(
+               new RagdollTriggerPacket(RagdollClientPoseCapture.capture(), Minecraft.getInstance().player.yBodyRot),
+               new CustomPacketPayload[0]
+            );
          }
       }
    }

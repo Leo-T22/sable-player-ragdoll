@@ -9,6 +9,9 @@
     "PlayerRagdollHiddenMixin"
   ],
   "client": [
+    "ActiveSableCompanionCameraMixin",
+    "RagdollFirstPersonEyeMixin",
+    "EntitySubLevelRotationHelperMixin",
     "HumanoidArmorLayerMixin",
     "HumanoidModelMixin",
     "LivingEntityRendererAccessor",

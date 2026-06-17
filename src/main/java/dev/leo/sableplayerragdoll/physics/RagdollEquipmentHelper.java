@@ -31,12 +31,12 @@ final class RagdollEquipmentHelper {
       }
    }
 
-   static void applyFrom(ServerLevel level, UUID headId, Player player) {
-      applySnapshot(level, headId, capture(player, RagdollEquipmentScope.ALL));
+   static void applyFrom(ServerLevel level, UUID rootId, Player player) {
+      applySnapshot(level, rootId, capture(player, RagdollEquipmentScope.ALL));
    }
 
-   static void applyExtraFrom(ServerLevel level, UUID headId, Player player) {
-      applySnapshot(level, headId, capture(player, RagdollEquipmentScope.OPTIONAL_MODS));
+   static void applyExtraFrom(ServerLevel level, UUID rootId, Player player) {
+      applySnapshot(level, rootId, capture(player, RagdollEquipmentScope.OPTIONAL_MODS));
    }
 
    static RagdollEquipmentSnapshot capture(Player player, RagdollEquipmentScope scope) {
@@ -65,26 +65,26 @@ final class RagdollEquipmentHelper {
       return new RagdollEquipmentSnapshot(vanillaItems, curioItems, accessoriesItems);
    }
 
-   static void applySnapshot(ServerLevel level, UUID headId, RagdollEquipmentSnapshot snapshot) {
+   static void applySnapshot(ServerLevel level, UUID rootId, RagdollEquipmentSnapshot snapshot) {
       if (snapshot == null || snapshot.isEmpty()) return;
 
-      applyToAllParts(level, headId, be -> {
+      applyToAllParts(level, rootId, be -> {
          snapshot.vanillaItems().forEach(be::setItemForSlot);
          snapshot.curioItems().forEach(be::setCurioItems);
          snapshot.accessoriesItems().forEach(be::setAccessoriesItems);
       });
-      sendPartUpdates(level, headId);
+      sendPartUpdates(level, rootId);
    }
 
-   static void syncAccessoriesAndSend(ServerLevel level, UUID headId, Player player) {
+   static void syncAccessoriesAndSend(ServerLevel level, UUID rootId, Player player) {
       if (!ModList.get().isLoaded("accessories")) return;
-      RagdollAccessoriesEquipmentHelper.applyFrom(level, headId, player);
-      sendPartUpdates(level, headId);
+      RagdollAccessoriesEquipmentHelper.applyFrom(level, rootId, player);
+      sendPartUpdates(level, rootId);
    }
 
-   static void applyToAllParts(ServerLevel level, UUID headId, Consumer<RagdollPartBlockEntity> action) {
+   static void applyToAllParts(ServerLevel level, UUID rootId, Consumer<RagdollPartBlockEntity> action) {
       var container = SubLevelContainer.getContainer(level);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(headId)) {
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
          SubLevel subLevel = container.getSubLevel(partId);
          if (subLevel == null || subLevel.getPlot() == null) continue;
          BlockPos center = subLevel.getPlot().getCenterBlock();
@@ -94,9 +94,9 @@ final class RagdollEquipmentHelper {
       }
    }
 
-   private static void sendPartUpdates(ServerLevel level, UUID headId) {
+   private static void sendPartUpdates(ServerLevel level, UUID rootId) {
       var container = SubLevelContainer.getContainer(level);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(headId)) {
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
          SubLevel subLevel = container.getSubLevel(partId);
          if (subLevel == null || subLevel.getPlot() == null) continue;
          BlockPos center = subLevel.getPlot().getCenterBlock();

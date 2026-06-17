@@ -11,15 +11,15 @@ final class RagdollAccessoriesLiveSync {
 
     private RagdollAccessoriesLiveSync() {}
 
-    static void poll(ServerLevel level, UUID headId, Player player) {
+    static void poll(ServerLevel level, UUID rootId, Player player) {
         if (!ModList.get().isLoaded("accessories")) return;
         long signature = RagdollAccessoriesEquipmentHelper.accessoriesSignature(player);
-        Long previous = LAST_SIGNATURE.put(headId, signature);
+        Long previous = LAST_SIGNATURE.put(rootId, signature);
         if (previous != null && previous == signature) return;
-        RagdollEquipmentHelper.syncAccessoriesAndSend(level, headId, player);
+        RagdollEquipmentHelper.syncAccessoriesAndSend(level, rootId, player);
     }
 
-    static void clear(UUID headId) {
-        LAST_SIGNATURE.remove(headId);
+    static void clear(UUID rootId) {
+        LAST_SIGNATURE.remove(rootId);
     }
 }

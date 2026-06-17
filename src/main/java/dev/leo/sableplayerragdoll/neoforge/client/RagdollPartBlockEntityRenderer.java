@@ -6,6 +6,8 @@ import com.mojang.math.Axis;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
+import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
+import net.minecraft.client.CameraType;
 import dev.leo.sableplayerragdoll.neoforge.mixin.LivingEntityRendererAccessor;
 import java.util.EnumSet;
 import java.util.Set;
@@ -67,6 +69,13 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
    @Override
    public void render(RagdollPartBlockEntity blockEntity, float partialTick, PoseStack poseStack, MultiBufferSource buffer, int packedLight, int packedOverlay) {
       BodyPart bodyPart = blockEntity.bodyPart();
+      if (bodyPart == BodyPart.HEAD
+            && Minecraft.getInstance().options.getCameraType() == CameraType.FIRST_PERSON
+            && Minecraft.getInstance().player != null
+            && Minecraft.getInstance().player.getVehicle() instanceof RagdollSeatEntity
+            && Minecraft.getInstance().player.getUUID().equals(blockEntity.skinProfile().getId())) {
+         return;
+      }
       PlayerSkin skin = this.skin(blockEntity);
       this.model = skin.model() == PlayerSkin.Model.SLIM ? this.slimModel : this.defaultModel;
       this.currentTexture = skin.texture();

@@ -19,21 +19,20 @@ public final class RagdollNetworking {
 
    public static void register(RegisterPayloadHandlersEvent event) {
       PayloadRegistrar registrar = event.registrar("sable_player_ragdoll");
-      registrar.playToClient(RagdollUnlockedCameraPacket.TYPE, RagdollUnlockedCameraPacket.STREAM_CODEC, RagdollUnlockedCameraPacket::handle);
-      registrar.playToClient(RagdollResetCameraPacket.TYPE, RagdollResetCameraPacket.STREAM_CODEC, RagdollResetCameraPacket::handle);
       registrar.playToClient(RagdollGrabSyncPacket.TYPE, RagdollGrabSyncPacket.STREAM_CODEC, RagdollGrabSyncPacket::handle);
+      registrar.playToClient(RagdollRequestPosePacket.TYPE, RagdollRequestPosePacket.STREAM_CODEC, RagdollRequestPosePacket::handle);
       registrar.playToServer(RagdollTriggerPacket.TYPE, RagdollTriggerPacket.STREAM_CODEC, RagdollTriggerPacket::handle);
       registrar.playToServer(RagdollGrabPacket.TYPE, RagdollGrabPacket.STREAM_CODEC, RagdollGrabPacket::handle);
       registrar.playToServer(RagdollInputPacket.TYPE, RagdollInputPacket.STREAM_CODEC, RagdollInputPacket::handle);
-   }
-
-   public static void notifyAutoSeated(ServerPlayer player) {
-      PacketDistributor.sendToPlayer(player, new RagdollUnlockedCameraPacket(), new CustomPacketPayload[0]);
+      registrar.playToServer(RagdollPoseResponsePacket.TYPE, RagdollPoseResponsePacket.STREAM_CODEC, RagdollPoseResponsePacket::handle);
    }
 
    public static void notifyReleased(ServerPlayer player) {
-      PacketDistributor.sendToPlayer(player, new RagdollResetCameraPacket(), new CustomPacketPayload[0]);
       player.connection.send(new ClientboundSetEntityMotionPacket(player.getId(), player.getDeltaMovement()));
+   }
+
+   public static void notifyRequestPose(ServerPlayer player, long requestId) {
+      PacketDistributor.sendToPlayer(player, new RagdollRequestPosePacket(requestId), new CustomPacketPayload[0]);
    }
 
    public static void notifyGrabStarted(ServerPlayer player) {

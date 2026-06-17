@@ -1,5 +1,6 @@
 package dev.leo.sableplayerragdoll.neoforge;
 
+import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
@@ -11,27 +12,41 @@ import dev.leo.sableplayerragdoll.neoforge.client.RagdollPartBlockEntityRenderer
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollSeatEntityRenderer;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollGrabClient;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollBlockInteractClient;
+import dev.leo.sableplayerragdoll.neoforge.config.RagdollClientConfig;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
+import net.neoforged.neoforge.client.event.RenderHighlightEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers;
+import net.neoforged.neoforge.common.NeoForge;
 
 @Mod(value = "sable_player_ragdoll", dist = {Dist.CLIENT})
 public final class SablePlayerRagdollNeoForgeClient {
    @SuppressWarnings("unchecked")
    public SablePlayerRagdollNeoForgeClient(ModContainer container, IEventBus modBus) {
       container.registerExtensionPoint(IConfigScreenFactory.class, (IConfigScreenFactory) ConfigurationScreen::new);
+      RagdollClientConfig.register(container);
       RagdollCameraHelper.init();
       RagdollKeybinds.init(modBus);
       RagdollInputClient.init();
       RagdollGrabClient.init();
       RagdollBlockInteractClient.init();
       modBus.addListener(SablePlayerRagdollNeoForgeClient::registerEntityRenderers);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForgeClient::onRenderHighlight);
+   }
+
+   private static void onRenderHighlight(RenderHighlightEvent.Block event) {
+      Level level = Minecraft.getInstance().level;
+      if (level != null && level.getBlockState(event.getTarget().getBlockPos()).getBlock() instanceof RagdollPartBlock) {
+         event.setCanceled(true);
+      }
    }
 
    @SuppressWarnings("unchecked")

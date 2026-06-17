@@ -40,11 +40,33 @@ public final class RagdollAPI {
 
    @Nullable
    public static RagdollSession launch(ServerPlayer player, Vec3 linearVelocityMetersPerSecond, RagdollLaunchOptions options) {
-      ServerLevel level = player.serverLevel();
+      return launch(player, linearVelocityMetersPerSecond, options, null);
+   }
+   @Nullable
+   public static RagdollSession launch(ServerPlayer player, Vec3 linearVelocityMetersPerSecond, RagdollLaunchOptions options, @Nullable RagdollPoseSnapshot initialPose) {
       Vector3d linear = new Vector3d(linearVelocityMetersPerSecond.x, linearVelocityMetersPerSecond.y, linearVelocityMetersPerSecond.z);
       Vector3d angular = new Vector3d();
       RagdollLaunchOptions resolvedOptions = options == null ? RagdollLaunchOptions.defaults() : options;
-      ServerSubLevel body = RagdollRegistry.launch(level, player, linear, angular, player.isFallFlying(), resolvedOptions.autoSeat(), resolvedOptions.limbs());
+      if (initialPose != null) {
+         return finishLaunch(player, resolvedOptions, linear, angular, initialPose);
+      }
+      RagdollAsyncPoseRequests.requestThenLaunch(player, linear, angular, resolvedOptions);
+      return null;
+   }
+
+   @Nullable
+   static RagdollSession finishLaunch(ServerPlayer player, RagdollLaunchOptions resolvedOptions, Vector3d linear, Vector3d angular, RagdollPoseSnapshot pose) {
+      ServerLevel level = player.serverLevel();
+      ServerSubLevel body = RagdollRegistry.launch(
+         level,
+         player,
+         linear,
+         angular,
+         player.isFallFlying(),
+         resolvedOptions.autoSeat(),
+         resolvedOptions.limbs(),
+         pose
+      );
       if (body == null) return null;
       RagdollSessionManager.setCustomDespawnConditions(body, resolvedOptions.despawnConditions());
       if (resolvedOptions.lockDismount()) RagdollSessionManager.setDismountLocked(body, true);
@@ -140,24 +162,24 @@ public final class RagdollAPI {
    }
 
    @Nullable
-   public static UUID torsoSubLevelId(UUID headId) {
-      return RagdollAssemblyHelper.linkedTorso(headId);
+   public static UUID torsoSubLevelId(UUID rootId) {
+      return rootId;
    }
 
-   public static void copyEquipmentFrom(ServerLevel level, UUID headId, Player player) {
-      applyEquipmentSnapshot(level, headId, captureEquipment(player, RagdollEquipmentScope.ALL));
+   public static void copyEquipmentFrom(ServerLevel level, UUID rootId, Player player) {
+      applyEquipmentSnapshot(level, rootId, captureEquipment(player, RagdollEquipmentScope.ALL));
    }
 
-   public static void copyExtraEquipmentFrom(ServerLevel level, UUID headId, Player player) {
-      applyEquipmentSnapshot(level, headId, captureEquipment(player, RagdollEquipmentScope.OPTIONAL_MODS));
+   public static void copyExtraEquipmentFrom(ServerLevel level, UUID rootId, Player player) {
+      applyEquipmentSnapshot(level, rootId, captureEquipment(player, RagdollEquipmentScope.OPTIONAL_MODS));
    }
 
    public static RagdollEquipmentSnapshot captureEquipment(Player player, RagdollEquipmentScope scope) {
       return RagdollRegistry.captureEquipment(player, scope);
    }
 
-   public static void applyEquipmentSnapshot(ServerLevel level, UUID headId, RagdollEquipmentSnapshot snapshot) {
-      RagdollRegistry.applyEquipmentSnapshot(level, headId, snapshot);
+   public static void applyEquipmentSnapshot(ServerLevel level, UUID rootId, RagdollEquipmentSnapshot snapshot) {
+      RagdollRegistry.applyEquipmentSnapshot(level, rootId, snapshot);
    }
 
    private record ActiveRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long startGameTime, List<DespawnCondition> customConditions)
