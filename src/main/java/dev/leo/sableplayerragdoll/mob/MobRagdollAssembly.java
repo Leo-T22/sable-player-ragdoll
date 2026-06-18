@@ -936,11 +936,14 @@ public final class MobRagdollAssembly {
             Vec3 joint = child.part().pivotOffset();
             Vector3d parentAnchor = plotAnchor(parent, joint.subtract(parent.part().centerOffset()));
             Vector3d childAnchor = plotAnchor(child, joint.subtract(child.part().centerOffset()));
+            Quaterniond parentRot = new Quaterniond(parent.subLevel().logicalPose().orientation());
+            Quaterniond childRot = new Quaterniond(child.subLevel().logicalPose().orientation());
+            Quaterniond parentFrame = parentRot.invert().mul(childRot);
             try {
                 PhysicsConstraintConfiguration<?> config = SableConstraintCompat.generic(
                         parentAnchor,
                         childAnchor,
-                        new Quaterniond(),
+                        parentFrame,
                         new Quaterniond(),
                         Set.of(ConstraintJointAxis.LINEAR_X, ConstraintJointAxis.LINEAR_Y, ConstraintJointAxis.LINEAR_Z)
                 );
