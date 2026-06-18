@@ -1,0 +1,15 @@
+{
+  "allow_all": true,
+  "entities": [
+    "minecraft:cow",
+    "minecraft:pig",
+    "minecraft:sheep",
+    "minecraft:chicken",
+    "minecraft:creeper",
+    "minecraft:zombie",
+    "minecraft:skeleton",
+    "minecraft:spider",
+    "minecraft:allay"
+  ],
+  "namespaces": []
+}

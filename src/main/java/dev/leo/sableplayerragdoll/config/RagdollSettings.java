@@ -26,10 +26,7 @@ public final class RagdollSettings {
    private static double impactDamageMax = 20.0;
    private static int impactDamageCooldownTicks = 10;
 
-   private static double massHead = 0.5;
-   private static double massTorso = 2.0;
-   private static double massArm = 1.0;
-   private static double massLeg = 1.5;
+   private static double mobMassDensity = 1.4;
    private static boolean debugLogging = true;
 
    private RagdollSettings() {
@@ -107,17 +104,8 @@ public final class RagdollSettings {
    public static int impactDamageCooldownTicks() { return impactDamageCooldownTicks; }
    public static void setImpactDamageCooldownTicks(int v) { impactDamageCooldownTicks = Math.max(0, v); }
 
-   public static double massHead() { return massHead; }
-   public static void setMassHead(double v) { massHead = Math.max(0.1, v); }
-
-   public static double massTorso() { return massTorso; }
-   public static void setMassTorso(double v) { massTorso = Math.max(0.1, v); }
-
-   public static double massArm() { return massArm; }
-   public static void setMassArm(double v) { massArm = Math.max(0.1, v); }
-
-   public static double massLeg() { return massLeg; }
-   public static void setMassLeg(double v) { massLeg = Math.max(0.1, v); }
+   public static double mobMassDensity() { return mobMassDensity; }
+   public static void setMobMassDensity(double v) { mobMassDensity = Math.max(0.01, v); }
 
    public static boolean debugLogging() { return debugLogging; }
    public static void setDebugLogging(boolean v) { debugLogging = v; }

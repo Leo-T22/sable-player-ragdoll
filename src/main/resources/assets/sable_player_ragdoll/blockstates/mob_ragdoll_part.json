@@ -1,0 +1,9 @@
+{
+  "multipart": [
+    {
+      "apply": {
+        "model": "sable_player_ragdoll:block/mob_ragdoll_part"
+      }
+    }
+  ]
+}

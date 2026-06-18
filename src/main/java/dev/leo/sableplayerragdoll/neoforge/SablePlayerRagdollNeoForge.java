@@ -23,6 +23,12 @@ import dev.leo.sableplayerragdoll.block.RagdollBlocks;
 import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntities;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
+import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
+import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
+import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
+import dev.leo.sableplayerragdoll.mob.item.MobRagdollItems;
+import dev.leo.sableplayerragdoll.mob.network.MobRagdollNetworking;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntities;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
@@ -77,6 +83,7 @@ import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
+import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
 import net.neoforged.neoforge.event.entity.ProjectileImpactEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
@@ -106,11 +113,15 @@ public final class SablePlayerRagdollNeoForge {
       modBus.addListener(RagdollConfig::onReload);
       RagdollConfig.register(modContainer);
       modBus.addListener(RagdollNetworking::register);
+      MobRagdollBlocks.register(modBus);
+      MobRagdollItems.register(modBus);
+      modBus.addListener(MobRagdollNetworking::register);
       modBus.addListener(SablePlayerRagdollNeoForge::onCommonSetup);
       modBus.addListener(SablePlayerRagdollNeoForge::registerAttributes);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onLevelTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityMount);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityJoinLevel);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockPlaced);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockBreak);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onLeftClickBlock);
@@ -132,6 +143,7 @@ public final class SablePlayerRagdollNeoForge {
    private static void onLevelTick(Post event) {
       if (event.getLevel() instanceof ServerLevel serverLevel) {
          RagdollSessionManager.tickActiveRagdolls(serverLevel);
+         MobRagdollAssembly.tickActiveRagdolls(serverLevel);
          SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(serverLevel);
          if (physicsSystem != null) {
             RagdollDeferredSync.flushRemovals(physicsSystem);
@@ -162,7 +174,13 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    private static void onEntityMount(EntityMountEvent event) {
-      if (!event.isDismounting() || !(event.getEntityMounting() instanceof ServerPlayer player) || !(event.getLevel() instanceof ServerLevel level)) return;
+      if (!(event.getLevel() instanceof ServerLevel level)) return;
+      if (!event.isDismounting() && event.getEntityBeingMounted() instanceof LivingEntity mounted
+         && MobRagdollAssembly.isPendingOrConverted(mounted.getUUID())) {
+         event.setCanceled(true);
+         return;
+      }
+      if (!event.isDismounting() || !(event.getEntityMounting() instanceof ServerPlayer player)) return;
       ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
       if (ragdoll == null || RagdollSessionManager.isExpiring(ragdoll)) return;
       event.setCanceled(true);
@@ -171,6 +189,12 @@ public final class SablePlayerRagdollNeoForge {
          if (physicsSystem != null) {
             RagdollExpireHelper.expire(physicsSystem, level, ragdoll, "manual dismount");
          }
+      }
+   }
+
+   private static void onEntityJoinLevel(EntityJoinLevelEvent event) {
+      if (event.getLevel() instanceof ServerLevel level && event.getEntity() instanceof LivingEntity living) {
+         MobRagdollAssembly.hideLoadedRagdollSource(level, living);
       }
    }
 
@@ -197,6 +221,15 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    private static void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+      if (event.getLevel().getBlockState(event.getPos()).getBlock() instanceof MobRagdollPartBlock) {
+         event.setCanceled(true);
+         if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START
+               && event.getLevel() instanceof ServerLevel mobLevel
+               && mobLevel.getBlockEntity(event.getPos()) instanceof MobRagdollPartBlockEntity mobPart) {
+            MobRagdollAssembly.attackPart(mobLevel, mobPart, event.getEntity());
+         }
+         return;
+      }
       if (event.getLevel().getBlockState(event.getPos()).getBlock() instanceof RagdollPartBlock) {
          event.setCanceled(true);
          if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START
@@ -331,15 +364,47 @@ public final class SablePlayerRagdollNeoForge {
    private static void onProjectileImpact(ProjectileImpactEvent event) {
       if (!(event.getProjectile().level() instanceof ServerLevel level)) return;
       if (!(event.getRayTraceResult() instanceof BlockHitResult hit)) return;
-      if (!(level.getBlockState(hit.getBlockPos()).getBlock() instanceof RagdollPartBlock)) return;
+      BlockPos hitPos = hit.getBlockPos();
+      Block hitBlock = level.getBlockState(hitPos).getBlock();
+      if (hitBlock instanceof MobRagdollPartBlock) {
+         if (pipeMobProjectile(level, hitPos, event.getProjectile())) {
+            event.setCanceled(true);
+         }
+         return;
+      }
+      if (!(hitBlock instanceof RagdollPartBlock)) return;
 
-      SubLevel subLevel = Sable.HELPER.getContaining(level, hit.getBlockPos());
+      SubLevel subLevel = Sable.HELPER.getContaining(level, hitPos);
       if (subLevel == null) return;
       UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
       if (rootId == null) return;
 
       if (pipeProjectile(level, rootId, event.getProjectile())) {
          event.setCanceled(true);
+      }
+   }
+
+   private static boolean pipeMobProjectile(ServerLevel level, BlockPos hitPos, Projectile projectile) {
+      if (!(level.getBlockEntity(hitPos) instanceof MobRagdollPartBlockEntity part)) return false;
+      UUID sourceId = part.sourceEntityId();
+      if (sourceId == null) return false;
+      Entity owner = projectile.getOwner();
+      if (owner != null && sourceId.equals(owner.getUUID())) return false;
+      Entity sourceEntity = level.getEntity(sourceId);
+      if (!(sourceEntity instanceof LivingEntity living) || !living.isAlive()) return false;
+
+      DamageSource source = projectileDamageSource(level, projectile);
+      float damage = projectileDamageAmount(projectile);
+
+      MobRagdollAssembly.RAGDOLL_PIPE_ACTIVE.set(true);
+      try {
+         boolean hurt = living.hurt(source, damage);
+         if (hurt) {
+            MobRagdollAssembly.applyKnockup(sourceId);
+         }
+         return hurt;
+      } finally {
+         MobRagdollAssembly.RAGDOLL_PIPE_ACTIVE.set(false);
       }
    }
 
@@ -776,5 +841,6 @@ public final class SablePlayerRagdollNeoForge {
 
    private static void onServerStopped(ServerStoppedEvent event) {
       RagdollRegistry.resetState();
+      MobRagdollAssembly.resetRuntimeState();
    }
 }

@@ -333,6 +333,7 @@ public final class RagdollRegistry {
       RAGDOLL_BODY_IDS.clear();
       PLAYER_COOLDOWNS.clear();
       RESTORED_HANDLES.clear();
+      RagdollAssemblyHelper.resetState();
    }
 
    private static @Nullable ServerSubLevel assembleRagdollBody(ServerLevel level, ServerPlayer player, Vec3 poseForward, RagdollLimbOptions limbs) {
@@ -393,11 +394,31 @@ public final class RagdollRegistry {
    }
 
    private static boolean canTarget(ServerPlayer player, long gameTime, boolean manualTrigger) {
-      if (player.isDeadOrDying() || player.isPassenger() || player.isSpectator()) return false;
-      if (!manualTrigger && player.isFallFlying()) return false;
-      if (!manualTrigger && player.isCreative() && !RagdollSettings.affectCreative()) return false;
-      if (RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID()) != null) return false;
-      return gameTime >= PLAYER_COOLDOWNS.getOrDefault(player.getUUID(), Long.MIN_VALUE);
+      String reject = canTargetReject(player, gameTime, manualTrigger);
+      if (reject != null) {
+         if (RagdollSettings.debugLogging()) {
+            SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] canTarget({}) rejected: {}", player.getGameProfile().getName(), reject);
+         }
+         return false;
+      }
+      return true;
+   }
+
+   private static String canTargetReject(ServerPlayer player, long gameTime, boolean manualTrigger) {
+      if (player.isDeadOrDying()) return "isDeadOrDying";
+      if (player.isPassenger()) return "isPassenger(vehicle=" + (player.getVehicle() == null ? "null" : player.getVehicle().getType()) + ")";
+      if (player.isSpectator()) return "isSpectator";
+      if (!manualTrigger && player.isFallFlying()) return "isFallFlying";
+      if (!manualTrigger && player.isCreative() && !RagdollSettings.affectCreative()) return "creative+!affectCreative";
+      var existing = RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID());
+      if (existing != null) {
+         return "activeRagdollForPlayer!=null (subLevel=" + existing.getUniqueId()
+            + ", storedPlayerId=" + RagdollSessionManager.getPlayerId(existing) + ")";
+      }
+      if (gameTime < PLAYER_COOLDOWNS.getOrDefault(player.getUUID(), Long.MIN_VALUE)) {
+         return "cooldown (until=" + PLAYER_COOLDOWNS.get(player.getUUID()) + ", now=" + gameTime + ")";
+      }
+      return null;
    }
 
    private static Vector3d toMetersPerSecond(Vec3 blocksPerTick) {

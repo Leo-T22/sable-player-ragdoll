@@ -559,6 +559,15 @@ public final class RagdollAssemblyHelper {
       }
    }
 
+   public static void resetState() {
+      ACTIVE_CONSTRAINTS.clear();
+      JOINTS_BY_ROOT.clear();
+      DOLL_PARTS_BY_ROOT.clear();
+      BODY_PART_BY_SUBLEVEL.clear();
+      ROOT_BY_PART.clear();
+      ELYTRA_ROOTS.clear();
+   }
+
    public record Doll(ServerSubLevel rootSubLevel, List<ServerSubLevel> allSubLevels, Map<BodyPart, UUID> partSubLevelIds, int constraints) {
    }
 

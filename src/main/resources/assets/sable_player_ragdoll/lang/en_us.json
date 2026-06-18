@@ -1,5 +1,5 @@
 {
-  "key.categories.sable_player_ragdoll": "Sable Player Ragdoll",
+  "key.categories.sable_player_ragdoll": "Sable Ragdolls",
   "key.sable_player_ragdoll.ragdoll": "Ragdoll",
   "sable_player_ragdoll.configuration.title": "%s Config",
   "sable_player_ragdoll.configuration.section.sable.player.ragdoll.server": "Server Config",
@@ -31,10 +31,9 @@
   "sable_player_ragdoll.configuration.expire_after_safety_timeout": "Expire After Safety Timeout",
   "sable_player_ragdoll.configuration.safety_timeout": "Safety Timeout",
   "sable_player_ragdoll.configuration.body_mass": "Body Mass",
-  "sable_player_ragdoll.configuration.mass_head": "Head Mass",
-  "sable_player_ragdoll.configuration.mass_torso": "Torso Mass",
-  "sable_player_ragdoll.configuration.mass_arm": "Arm Mass",
-  "sable_player_ragdoll.configuration.mass_leg": "Leg Mass",
+  "sable_player_ragdoll.configuration.mob_mass_density": "Ragdoll Mass Density",
   "sable_player_ragdoll.configuration.debug": "Debug",
-  "sable_player_ragdoll.configuration.debug_logging": "Debug Logging"
+  "sable_player_ragdoll.configuration.debug_logging": "Debug Logging",
+  "block.sable_player_ragdoll.mob_ragdoll_part": "Mob Ragdoll Part",
+  "item.sable_player_ragdoll.mob_ragdoll_debug_stick": "Mob Ragdoll Debug Stick"
 }

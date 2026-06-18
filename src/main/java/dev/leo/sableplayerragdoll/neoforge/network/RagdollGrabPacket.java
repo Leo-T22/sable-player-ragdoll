@@ -3,6 +3,7 @@ package dev.leo.sableplayerragdoll.neoforge.network;
 import dev.leo.sableplayerragdoll.RagdollGrabCallbacks;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.config.RagdollSettings;
+import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.physics.RagdollRegistry;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import net.minecraft.core.BlockPos;
@@ -43,6 +44,17 @@ public record RagdollGrabPacket(BlockPos pos, boolean release) implements Custom
                if (RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID()) != null) return;
                if (RagdollRegistry.isGrabDisabledAt(player.serverLevel(), packet.pos())) return;
                ragdollPart.startGrab(player.getUUID());
+               RagdollGrabCallbacks.notifyGrabbed(player);
+            }
+         } else if (blockEntity instanceof MobRagdollPartBlockEntity mobRagdollPart) {
+            if (packet.release()) {
+               mobRagdollPart.stopGrab(player.getUUID());
+               RagdollGrabCallbacks.notifyReleased(player);
+            } else {
+               if (!RagdollSettings.grabEnabled()) return;
+               if (RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID()) != null) return;
+               if (RagdollRegistry.isGrabDisabledAt(player.serverLevel(), packet.pos())) return;
+               mobRagdollPart.startGrab(player.getUUID());
                RagdollGrabCallbacks.notifyGrabbed(player);
             }
          }

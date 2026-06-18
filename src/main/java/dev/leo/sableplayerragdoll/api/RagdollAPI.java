@@ -1,6 +1,10 @@
 package dev.leo.sableplayerragdoll.api;
 
 import com.mojang.authlib.GameProfile;
+import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.api.MobRagdollEndEvent;
+import dev.leo.sableplayerragdoll.mob.api.MobRagdollLaunchOptions;
+import dev.leo.sableplayerragdoll.mob.api.MobRagdollSession;
 import dev.leo.sableplayerragdoll.physics.RagdollAssemblyHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollExpireHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollMotorEffects;
@@ -14,6 +18,7 @@ import java.util.List;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -184,6 +189,45 @@ public final class RagdollAPI {
 
    public static void applyEquipmentSnapshot(ServerLevel level, UUID rootId, RagdollEquipmentSnapshot snapshot) {
       RagdollRegistry.applyEquipmentSnapshot(level, rootId, snapshot);
+   }
+   @Nullable
+   public static MobRagdollSession launchMob(ServerLevel level, LivingEntity mob, Vec3 linearVelocity) {
+      return launchMob(level, mob, linearVelocity, Vec3.ZERO, MobRagdollLaunchOptions.defaults());
+   }
+
+   @Nullable
+   public static MobRagdollSession launchMob(ServerLevel level, LivingEntity mob, Vec3 linearVelocity, Vec3 angularVelocity, MobRagdollLaunchOptions options) {
+      if (!MobRagdollAssembly.requestLaunch(level, mob, linearVelocity, angularVelocity, options)) {
+         return null;
+      }
+      return new ActiveMobRagdollSession(level, mob);
+   }
+
+   public static boolean isMobRagdolled(LivingEntity mob) {
+      return MobRagdollAssembly.isPendingOrConverted(mob.getUUID());
+   }
+
+   public static void releaseMob(LivingEntity mob) {
+      if (mob.level() instanceof ServerLevel serverLevel) {
+         MobRagdollAssembly.despawn(serverLevel, mob);
+      }
+   }
+
+   private record ActiveMobRagdollSession(ServerLevel level, LivingEntity entity) implements MobRagdollSession {
+      @Override
+      public Vec3 currentVelocity() {
+         return MobRagdollAssembly.currentVelocity(entity.getUUID());
+      }
+
+      @Override
+      public long elapsedTicks() {
+         return MobRagdollAssembly.elapsedTicks(level, entity.getUUID());
+      }
+
+      @Override
+      public void release() {
+         MobRagdollAssembly.despawn(level, entity, MobRagdollEndEvent.Reason.RELEASED);
+      }
    }
 
    private record ActiveRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long startGameTime, List<DespawnCondition> customConditions)

@@ -1,0 +1,7 @@
+{
+  "selector": "sable_player_ragdoll:mob_ragdoll_part",
+  "properties": {
+    "sable:mass": 0.35,
+    "sable:volume": 0.5
+  }
+}

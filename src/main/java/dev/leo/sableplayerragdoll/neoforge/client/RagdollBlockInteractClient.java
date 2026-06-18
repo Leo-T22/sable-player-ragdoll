@@ -2,6 +2,7 @@ package dev.leo.sableplayerragdoll.neoforge.client;
 
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
+import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
 import net.minecraft.client.Minecraft;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.common.util.TriState;
@@ -29,7 +30,8 @@ public final class RagdollBlockInteractClient {
    }
 
    private static boolean isRagdollPart(PlayerInteractEvent event) {
-      return event.getLevel().getBlockEntity(event.getPos()) instanceof RagdollPartBlockEntity;
+      return event.getLevel().getBlockEntity(event.getPos()) instanceof RagdollPartBlockEntity
+         || event.getLevel().getBlockEntity(event.getPos()) instanceof MobRagdollPartBlockEntity;
    }
 
    private static boolean isLocalPlayerRagdolled() {

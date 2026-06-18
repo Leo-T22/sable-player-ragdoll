@@ -13,6 +13,8 @@ import dev.leo.sableplayerragdoll.neoforge.client.RagdollSeatEntityRenderer;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollGrabClient;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollBlockInteractClient;
 import dev.leo.sableplayerragdoll.neoforge.config.RagdollClientConfig;
+import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
+import dev.leo.sableplayerragdoll.mob.client.MobRagdollPartBlockEntityRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
@@ -54,5 +56,6 @@ public final class SablePlayerRagdollNeoForgeClient {
       event.registerEntityRenderer((EntityType<RagdollSeatEntity>) RagdollBlockRegistration.RAGDOLL_SEAT_ENTITY.get(), RagdollSeatEntityRenderer::new);
       event.registerEntityRenderer((EntityType<RagdollDollEntity>) RagdollBlockRegistration.RAGDOLL_DOLL_ENTITY.get(), RagdollDollEntityRenderer::new);
       event.registerBlockEntityRenderer((BlockEntityType<RagdollPartBlockEntity>) RagdollBlockRegistration.RAGDOLL_PART_BLOCK_ENTITY.get(), RagdollPartBlockEntityRenderer::new);
+      event.registerBlockEntityRenderer(MobRagdollBlocks.MOB_RAGDOLL_PART_ENTITY.get(), MobRagdollPartBlockEntityRenderer::new);
    }
 }

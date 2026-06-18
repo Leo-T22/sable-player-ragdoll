@@ -6,7 +6,10 @@
   "compatibilityLevel": "JAVA_21",
   "mixins": [
     "EntityRagdollHiddenMixin",
-    "PlayerRagdollHiddenMixin"
+    "PlayerRagdollHiddenMixin",
+    "PhysicsBlockPropertyHelperMixin",
+    "LivingEntityRagdollDamageMixin",
+    "LivingEntityRagdollInvisibilityMixin"
   ],
   "client": [
     "ActiveSableCompanionCameraMixin",
@@ -15,7 +18,8 @@
     "HumanoidArmorLayerMixin",
     "HumanoidModelMixin",
     "LivingEntityRendererAccessor",
-    "LivingEntityRendererMixin"
+    "LivingEntityRendererMixin",
+    "LivingEntityRendererRagdollMixin"
   ],
   "server": [],
   "injectors": {

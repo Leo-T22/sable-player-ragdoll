@@ -1,6 +1,6 @@
-# Sable Player Ragdoll
+# Sable Ragdolls
 
-Sable Player Ragdoll is a NeoForge mod that adds player ragdolls powered by
+Sable Ragdolls is a NeoForge mod that adds player and mob ragdolls powered by
 Sable's physics system. It can ragdoll players, seat the real player onto the
 simulated body, spawn playerless dummy ragdolls, and expose a small public API
 for addon mods.
@@ -350,6 +350,54 @@ control, temporary wailing effects, session locking, visual equipment snapshots,
 part interaction hooks, basic session queries, and sub-level identification. It
 does not currently expose direct force application to an already active ragdoll
 or full inventory storage.
+
+## Mob ragdolls
+
+Mobs can be ragdolled too. The mob system is intentionally separate from the player
+system internally mobs use runtime-extracted model geometry and a different
+hide/restore lifecycle but the public entry points live on the same `RagdollAPI`
+for convenience:
+
+```java
+MobRagdollSession session = RagdollAPI.launchMob(level, mob, linearVelocity);
+
+// With angular velocity and per-launch options:
+RagdollAPI.launchMob(level, mob, linearVelocity, angularVelocity, MobRagdollLaunchOptions.defaults());
+
+RagdollAPI.isMobRagdolled(mob);
+RagdollAPI.releaseMob(mob);
+```
+
+Mob launches return a `MobRagdollSession` (not the player `RagdollSession`). For
+advanced, part-driven entry points, see `dev.leo.sableplayerragdoll.mob.MobRagdollAPI`.
+
+### Mob ragdoll whitelist
+
+Only whitelisted mobs can be ragdolled. The whitelist is a curated JSON file in
+
+`src/main/resources/sable_player_ragdoll/mob_ragdoll_whitelist.json`
+
+```json
+{
+  "allow_all": false,
+  "entities": [
+    "minecraft:cow",
+    "minecraft:creeper"
+  ],
+  "namespaces": [
+    "examplemod"
+  ]
+}
+```
+
+- `allow_all` — when `true`, every mob may be ragdolled and the lists below are ignored.
+  Defaults to `false`.
+- `entities` — explicit entity-type ids that may be ragdolled.
+- `namespaces` — allow every mob from these mod ids (e.g. `"minecraft"` for all vanilla mobs).
+
+The list is default-deny: a mob matching none of the rules cannot be ragdolled through the
+API, the debug stick, or any reaction. Mobs already ragdolled when removed from the list
+still restore and expire cleanly from saved worlds.
 
 ## License
 
