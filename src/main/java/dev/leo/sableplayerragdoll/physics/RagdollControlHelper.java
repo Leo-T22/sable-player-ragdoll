@@ -17,7 +17,7 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Vector3d;
 
 public final class RagdollControlHelper {
-   private static final double CONTROL_TORQUE = 2.25;
+   private static final double CONTROL_TORQUE = 4.5;
    private static final double SWIM_FORWARD_ACCELERATION = 0.0;
    private static final double SWIM_UP_ACCELERATION = 0.0;
    private static final double MAX_CONTROL_ANGULAR_SPEED = 8.0;

@@ -24,14 +24,15 @@ import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.LinkedHashMap;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
@@ -79,6 +80,7 @@ public final class MobRagdollAssembly {
     public static void resetRuntimeState() {
         CONVERTED_ENTITIES.clear();
         PENDING_LAUNCHES.clear();
+        SPAWN_QUEUE.clear();
         RAGDOLL_STATES.clear();
         RESTORED_HANDLES.clear();
         CLIENT_BODY_YAW.clear();
@@ -113,8 +115,6 @@ public final class MobRagdollAssembly {
             return;
         }
 
-        List<SpawnedPart> spawnedParts = new ArrayList<>();
-        Vec3 base = entity.position();
         Float clientYaw = CLIENT_BODY_YAW.remove(entity.getUUID());
         float yaw = clientYaw != null ? clientYaw
                 : (entity instanceof Mob mob ? mob.yBodyRot : entity.getYRot());
@@ -123,90 +123,22 @@ public final class MobRagdollAssembly {
         Vec3 forward = new Vec3(-Math.sin(yawRadians), 0.0, Math.cos(yawRadians));
         Quaterniond baseOrientation = new Quaterniond().rotateY(Math.toRadians(180.0F - yaw));
 
-        for (int i = 0; i < parts.size(); i++) {
-            PartSpawn part = parts.get(i);
-            int maxYOffset = maxAxisBlockOffset(part.ySize());
-            int minYOffset = minAxisBlockOffset(part.ySize());
-            int safeY = level.getMaxBuildHeight() - 1 - maxYOffset - i * 8;
-            safeY = Math.max(level.getMinBuildHeight() - minYOffset, safeY);
-            BlockPos safePos = new BlockPos(entity.blockPosition().getX(), safeY, entity.blockPosition().getZ());
-            AssembledPart assembled = assemblePart(level, safePos, part, entity.getUUID(), entity.getId());
-            if (assembled == null) {
-                continue;
-            }
-            ServerSubLevel subLevel = assembled.subLevel();
-
-            Vec3 desired = base
-                    .add(right.scale(part.xOffset()))
-                    .add(0.0, part.yOffset(), 0.0)
-                    .add(forward.scale(-part.zOffset()));
-
-            Quaterniond partModelRot = new Quaterniond(
-                    -part.rotQx(), -part.rotQy(), part.rotQz(), part.rotQw());
-            Quaterniond orientation = new Quaterniond(baseOrientation).mul(partModelRot);
-            movePartTo(level, subLevel, assembled.anchorPlotPos(), desired, orientation);
-            spawnedParts.add(new SpawnedPart(part, subLevel, desired, assembled.anchorPlotPos(), right, forward));
+        // Capture entity state before queueing — position and snapshot may change by drain time
+        CompoundTag entitySnapshot = entity.saveWithoutId(new CompoundTag());
+        ragdollPlayerPassengers(entity, linearVelocity);
+        if (entity.isPassenger()) {
+            entity.stopRiding();
         }
-
-        if (!spawnedParts.isEmpty()) {
-            JointResult joints = attachJoints(level, spawnedParts);
-            if (joints.representative() != null) {
-                RESTORED_HANDLES.put(entity.getUUID(), joints.representative());
-                RESTORED_UUIDS.add(entity.getUUID());
-            }
-            if (entity instanceof Mob mob) {
-                mob.setNoAi(true);
-            }
-            entity.setDeltaMovement(Vec3.ZERO);
-            CompoundTag entitySnapshot = entity.saveWithoutId(new CompoundTag());
-            ragdollPlayerPassengers(entity, linearVelocity);
-
-            if (entity.isPassenger()) {
-                entity.stopRiding();
-            }
-            if (autoSeat) {
-                entity.setInvisible(true);
-                entity.noPhysics = true;
-                entity.refreshDimensions();
-            }
-            RAGDOLL_STATES.put(entity.getUUID(), new RagdollState(List.copyOf(spawnedParts), level.getGameTime(), entity.position(), durationTicks));
-
-            Map<String, UUID> partIds = new LinkedHashMap<>();
-            Map<String, MobRagdollSavedData.PartInfo> partInfos = new LinkedHashMap<>();
-            for (SpawnedPart spawned : spawnedParts) {
-                PartSpawn ps = spawned.part();
-                partIds.put(ps.partName(), spawned.subLevel().getUniqueId());
-                partInfos.put(ps.partName(), new MobRagdollSavedData.PartInfo(
-                        ps.role(), ps.pivotX(), ps.pivotY(), ps.pivotZ(),
-                        (float) ps.xOffset(), (float) ps.yOffset(), (float) ps.zOffset(),
-                        ps.rotQx(), ps.rotQy(), ps.rotQz(), ps.rotQw()));
-            }
-            MobRagdollSavedData.get(level).addEntry(
-                    entity.getUUID(),
-                    level.getGameTime(),
-                    entity.position(),
-                    entity.getType().builtInRegistryHolder().key().location().toString(),
-                    entitySnapshot,
-                    partInfos,
-                    partIds);
-
-            Vec3 linear = linearVelocity;
-            Vec3 angular = angularVelocity;
-            if (linear.lengthSqr() > 0.0 || angular.lengthSqr() > 0.0) {
-                SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-                if (physicsSystem != null) {
-                    for (SpawnedPart spawned : spawnedParts) {
-                        RigidBodyHandle.of(spawned.subLevel()).addLinearAndAngularVelocity(
-                                new Vector3d(linear.x, linear.y, linear.z),
-                                new Vector3d(angular.x, angular.y, angular.z));
-                    }
-                }
-            }
-
-            SablePlayerRagdoll.LOGGER.info("[mob-ragdoll] spawned {} Sable sublevels and {} joints for {}", spawnedParts.size(), joints.count(), entity.getType().builtInRegistryHolder().key().location());
-        } else {
-            CONVERTED_ENTITIES.remove(entity.getUUID());
+        if (entity instanceof Mob mob) {
+            mob.setNoAi(true);
         }
+        entity.setDeltaMovement(Vec3.ZERO);
+
+        SPAWN_QUEUE.add(new PendingAssembly(
+                level, entity.getUUID(), entity.getId(), List.copyOf(parts),
+                entity.position(), entity.blockPosition(), right, forward, baseOrientation,
+                linearVelocity, angularVelocity, durationTicks, autoSeat, entitySnapshot));
+        drainSpawnQueue(level);
     }
 
     private static void ragdollPlayerPassengers(LivingEntity entity, Vec3 inheritedVelocity) {
@@ -622,6 +554,8 @@ public final class MobRagdollAssembly {
     private static final int RAGDOLL_DURATION_TICKS = 80;
     private static final int PENDING_LAUNCH_TIMEOUT_TICKS = 40;
     private static final Map<UUID, PendingLaunch> PENDING_LAUNCHES = new ConcurrentHashMap<>();
+    private static final ArrayDeque<PendingAssembly> SPAWN_QUEUE = new ArrayDeque<>();
+    private static final int PARTS_PER_MOB_PER_TICK = Integer.MAX_VALUE;
     private static final double IMPACT_DAMAGE_THRESHOLD = 12.0;
     private static final double IMPACT_DAMAGE_MULTIPLIER = 0.75;
     private static final double IMPACT_DAMAGE_MAX = 20.0;
@@ -634,6 +568,7 @@ public final class MobRagdollAssembly {
 
     public static void tickActiveRagdolls(ServerLevel level) {
         long now = level.getGameTime();
+        drainSpawnQueue(level);
         runDeferredRestores(level, now);
         SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
         if (!PENDING_LAUNCHES.isEmpty()) {
@@ -676,6 +611,114 @@ public final class MobRagdollAssembly {
             } else {
                 discardRagdoll(level, uuid);
             }
+        }
+    }
+
+    private static void drainSpawnQueue(ServerLevel level) {
+        if (SPAWN_QUEUE.isEmpty()) return;
+        List<PendingAssembly> forLevel = new ArrayList<>();
+        for (PendingAssembly p : SPAWN_QUEUE) {
+            if (p.level == level) forLevel.add(p);
+        }
+        if (forLevel.isEmpty()) return;
+
+        for (PendingAssembly pending : forLevel) {
+            Entity entity = level.getEntity(pending.entityUUID);
+            if (!(entity instanceof LivingEntity livingEntity)) {
+                SPAWN_QUEUE.remove(pending);
+                CONVERTED_ENTITIES.remove(pending.entityUUID);
+                cleanupPartialAssembly(level, pending);
+                continue;
+            }
+
+            int budget = PARTS_PER_MOB_PER_TICK;
+            while (pending.nextPartIndex < pending.parts.size() && budget > 0) {
+                int i = pending.nextPartIndex;
+                PartSpawn part = pending.parts.get(i);
+                int maxYOffset = maxAxisBlockOffset(part.ySize());
+                int minYOffset = minAxisBlockOffset(part.ySize());
+                int safeY = level.getMaxBuildHeight() - 1 - maxYOffset - i * 8;
+                safeY = Math.max(level.getMinBuildHeight() - minYOffset, safeY);
+                BlockPos safePos = new BlockPos(pending.baseBlockPos.getX(), safeY, pending.baseBlockPos.getZ());
+                AssembledPart assembled = assemblePart(level, safePos, part, pending.entityUUID, pending.entityNetworkId);
+                if (assembled != null) {
+                    Vec3 desired = pending.base
+                            .add(pending.right.scale(part.xOffset()))
+                            .add(0.0, part.yOffset(), 0.0)
+                            .add(pending.forward.scale(-part.zOffset()));
+                    Quaterniond partModelRot = new Quaterniond(
+                            -part.rotQx(), -part.rotQy(), part.rotQz(), part.rotQw());
+                    Quaterniond orientation = new Quaterniond(pending.baseOrientation).mul(partModelRot);
+                    movePartTo(level, assembled.subLevel(), assembled.anchorPlotPos(), desired, orientation);
+                    pending.assembled.add(new SpawnedPart(part, assembled.subLevel(), desired, assembled.anchorPlotPos(), pending.right, pending.forward));
+                }
+                pending.nextPartIndex++;
+                budget--;
+            }
+
+            if (pending.nextPartIndex >= pending.parts.size()) {
+                SPAWN_QUEUE.remove(pending);
+                if (!pending.assembled.isEmpty()) {
+                    finishAssembly(level, livingEntity, pending);
+                } else {
+                    CONVERTED_ENTITIES.remove(pending.entityUUID);
+                }
+            }
+        }
+    }
+
+    private static void finishAssembly(ServerLevel level, LivingEntity entity, PendingAssembly pending) {
+        List<SpawnedPart> spawnedParts = pending.assembled;
+        JointResult joints = attachJoints(level, spawnedParts);
+        if (joints.representative() != null) {
+            RESTORED_HANDLES.put(entity.getUUID(), joints.representative());
+            RESTORED_UUIDS.add(entity.getUUID());
+        }
+        if (pending.autoSeat) {
+            entity.setInvisible(true);
+            entity.noPhysics = true;
+            entity.refreshDimensions();
+        }
+        RAGDOLL_STATES.put(entity.getUUID(), new RagdollState(List.copyOf(spawnedParts), level.getGameTime(), entity.position(), pending.durationTicks));
+
+        Map<String, UUID> partIds = new LinkedHashMap<>();
+        Map<String, MobRagdollSavedData.PartInfo> partInfos = new LinkedHashMap<>();
+        for (SpawnedPart spawned : spawnedParts) {
+            PartSpawn ps = spawned.part();
+            partIds.put(ps.partName(), spawned.subLevel().getUniqueId());
+            partInfos.put(ps.partName(), new MobRagdollSavedData.PartInfo(
+                    ps.role(), ps.pivotX(), ps.pivotY(), ps.pivotZ(),
+                    (float) ps.xOffset(), (float) ps.yOffset(), (float) ps.zOffset(),
+                    ps.rotQx(), ps.rotQy(), ps.rotQz(), ps.rotQw()));
+        }
+        MobRagdollSavedData.get(level).addEntry(
+                entity.getUUID(),
+                level.getGameTime(),
+                entity.position(),
+                entity.getType().builtInRegistryHolder().key().location().toString(),
+                pending.entitySnapshot,
+                partInfos,
+                partIds);
+
+        if (pending.linearVelocity.lengthSqr() > 0.0 || pending.angularVelocity.lengthSqr() > 0.0) {
+            SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
+            if (physicsSystem != null) {
+                for (SpawnedPart spawned : spawnedParts) {
+                    RigidBodyHandle.of(spawned.subLevel()).addLinearAndAngularVelocity(
+                            new Vector3d(pending.linearVelocity.x, pending.linearVelocity.y, pending.linearVelocity.z),
+                            new Vector3d(pending.angularVelocity.x, pending.angularVelocity.y, pending.angularVelocity.z));
+                }
+            }
+        }
+
+        SablePlayerRagdoll.LOGGER.info("[mob-ragdoll] spawned {} Sable sublevels and {} joints for {}",
+                spawnedParts.size(), joints.count(), entity.getType().builtInRegistryHolder().key().location());
+    }
+
+    private static void cleanupPartialAssembly(ServerLevel level, PendingAssembly pending) {
+        SubLevelContainer container = SubLevelContainer.getContainer(level);
+        for (SpawnedPart sp : pending.assembled) {
+            removeSubLevelIfPresent(container, sp.subLevel());
         }
     }
 
@@ -1296,5 +1339,44 @@ public final class MobRagdollAssembly {
     }
 
     private record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
+    }
+
+    private static final class PendingAssembly {
+        final ServerLevel level;
+        final UUID entityUUID;
+        final int entityNetworkId;
+        final List<PartSpawn> parts;
+        final Vec3 base;
+        final BlockPos baseBlockPos;
+        final Vec3 right;
+        final Vec3 forward;
+        final Quaterniond baseOrientation;
+        final Vec3 linearVelocity;
+        final Vec3 angularVelocity;
+        final int durationTicks;
+        final boolean autoSeat;
+        final CompoundTag entitySnapshot;
+        int nextPartIndex = 0;
+        final List<SpawnedPart> assembled = new ArrayList<>();
+
+        PendingAssembly(ServerLevel level, UUID entityUUID, int entityNetworkId, List<PartSpawn> parts,
+                        Vec3 base, BlockPos baseBlockPos, Vec3 right, Vec3 forward, Quaterniond baseOrientation,
+                        Vec3 linearVelocity, Vec3 angularVelocity, int durationTicks, boolean autoSeat,
+                        CompoundTag entitySnapshot) {
+            this.level = level;
+            this.entityUUID = entityUUID;
+            this.entityNetworkId = entityNetworkId;
+            this.parts = parts;
+            this.base = base;
+            this.baseBlockPos = baseBlockPos;
+            this.right = right;
+            this.forward = forward;
+            this.baseOrientation = baseOrientation;
+            this.linearVelocity = linearVelocity;
+            this.angularVelocity = angularVelocity;
+            this.durationTicks = durationTicks;
+            this.autoSeat = autoSeat;
+            this.entitySnapshot = entitySnapshot;
+        }
     }
 }
