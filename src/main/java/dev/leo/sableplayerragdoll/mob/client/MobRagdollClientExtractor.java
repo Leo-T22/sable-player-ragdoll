@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.model.AgeableListModel;
 import net.minecraft.client.model.EntityModel;
 import net.minecraft.client.renderer.entity.EntityRenderer;
 import net.minecraft.client.renderer.entity.LivingEntityRenderer;
@@ -65,7 +66,7 @@ public final class MobRagdollClientExtractor {
 
         CompoundTag variantData = renderVariantData(livingEntity);
         boolean baby = livingEntity.isBaby();
-        float modelScale = getModelScale(livingEntity, livingRenderer, extracted);
+        float modelScale = getModelScale(livingEntity, livingRenderer, model, extracted);
         Map<String, ExtractedMobModel.ExtractedPart> staticByName = extracted.parts().stream()
                 .collect(Collectors.toMap(ExtractedMobModel.ExtractedPart::name, p -> p, (first, second) -> first));
         List<MobRagdollSpawnPacket.Part> parts = extracted.parts().stream()
@@ -199,11 +200,13 @@ public final class MobRagdollClientExtractor {
         return parent != null && parent.role() == part.role();
     }
 
-    private static float getModelScale(LivingEntity livingEntity, LivingEntityRenderer<?, ?> renderer, ExtractedMobModel extracted) {
+    private static float getModelScale(LivingEntity livingEntity, LivingEntityRenderer<?, ?> renderer, EntityModel<?> model, ExtractedMobModel extracted) {
         float rendererScale = probeRendererScale(renderer, livingEntity);
-        float boundsScale = getBoundingBoxScale(livingEntity, extracted);
-        if (livingEntity.isBaby() && Float.isFinite(boundsScale) && boundsScale > 0.05F) {
-            return rendererScale * boundsScale;
+        if (livingEntity.isBaby() && !(model instanceof AgeableListModel<?> && model.young)) {
+            float boundsScale = getBoundingBoxScale(livingEntity, extracted);
+            if (Float.isFinite(boundsScale) && boundsScale > 0.05F) {
+                return rendererScale * boundsScale;
+            }
         }
         return rendererScale * livingEntity.getScale();
     }
