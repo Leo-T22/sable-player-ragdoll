@@ -3,7 +3,7 @@ build/
 out/
 *.class
 .gradle/
-run/
+run*/
 runs/
 .idea/
 .vscode/

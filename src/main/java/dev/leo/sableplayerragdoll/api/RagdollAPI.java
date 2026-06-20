@@ -52,6 +52,9 @@ public final class RagdollAPI {
       Vector3d linear = new Vector3d(linearVelocityMetersPerSecond.x, linearVelocityMetersPerSecond.y, linearVelocityMetersPerSecond.z);
       Vector3d angular = new Vector3d();
       RagdollLaunchOptions resolvedOptions = options == null ? RagdollLaunchOptions.defaults() : options;
+      if (isRagdolled(player)) {
+         return null;
+      }
       if (initialPose != null) {
          return finishLaunch(player, resolvedOptions, linear, angular, initialPose);
       }

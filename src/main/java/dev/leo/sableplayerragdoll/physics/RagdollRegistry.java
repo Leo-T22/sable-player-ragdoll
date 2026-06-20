@@ -41,6 +41,8 @@ public final class RagdollRegistry {
    private static final double BLOCKS_PER_TICK_TO_METERS_PER_SECOND = 20.0;
    private static final Set<UUID> RAGDOLL_BODY_IDS = new HashSet<>();
    private static final Map<UUID, Long> PLAYER_COOLDOWNS = new HashMap<>();
+   private static final Map<UUID, Long> LAUNCH_RESERVATIONS = new HashMap<>();
+   private static final long LAUNCH_RESERVATION_TICKS = 10L;
    private static final Map<UUID, PhysicsConstraintHandle> RESTORED_HANDLES = new ConcurrentHashMap<>();
    private static boolean loggedFirstTick;
 
@@ -71,6 +73,16 @@ public final class RagdollRegistry {
       SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
       if (physicsSystem == null) return null;
 
+      UUID playerId = player.getUUID();
+      long gameTime = level.getGameTime();
+      if (isLaunchSuppressed(level, playerId, gameTime)) {
+         if (RagdollSettings.debugLogging()) {
+            SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] launch ignored for {} (already ragdolled or launch already in flight)",
+               player.getGameProfile().getName());
+         }
+         return null;
+      }
+
       RagdollStartEvent event = new RagdollStartEvent(player, new Vec3(linear.x, linear.y, linear.z));
       if (NeoForge.EVENT_BUS.post(event).isCanceled()) {
          return null;
@@ -93,9 +105,10 @@ public final class RagdollRegistry {
       }
 
       RAGDOLL_BODY_IDS.add(ragdollBody.getUniqueId());
-      UUID seatPlayerId = autoSeat ? player.getUUID() : null;
+      UUID seatPlayerId = autoSeat ? playerId : null;
       RagdollDeferredSync.queueLaunch(ragdollBody, linear, angular, seatPlayerId, true);
-      PLAYER_COOLDOWNS.put(player.getUUID(), level.getGameTime() + (long) RagdollSettings.cooldownTicks());
+      PLAYER_COOLDOWNS.put(playerId, gameTime + (long) RagdollSettings.cooldownTicks());
+      LAUNCH_RESERVATIONS.put(playerId, gameTime + LAUNCH_RESERVATION_TICKS);
       SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] queued ragdoll {} for {} (launch + sitDown next tick)",
          shortId(ragdollBody.getUniqueId()), player.getGameProfile().getName());
       return ragdollBody;
@@ -299,6 +312,14 @@ public final class RagdollRegistry {
    static void suppressAfterRelease(UUID playerId, long gameTime) {
       RagdollControlHelper.clearInput(playerId);
       PLAYER_COOLDOWNS.put(playerId, gameTime + (long) RagdollSettings.cooldownTicks());
+      LAUNCH_RESERVATIONS.remove(playerId);
+   }
+   private static boolean isLaunchSuppressed(ServerLevel level, UUID playerId, long gameTime) {
+      if (RagdollSessionManager.activeRagdollForPlayer(level, playerId) != null) {
+         return true;
+      }
+      Long reservedUntil = LAUNCH_RESERVATIONS.get(playerId);
+      return reservedUntil != null && gameTime <= reservedUntil;
    }
 
    public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
