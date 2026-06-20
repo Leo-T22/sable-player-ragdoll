@@ -202,7 +202,9 @@ public final class MobRagdollClientExtractor {
 
     private static float getModelScale(LivingEntity livingEntity, LivingEntityRenderer<?, ?> renderer, EntityModel<?> model, ExtractedMobModel extracted) {
         float rendererScale = probeRendererScale(renderer, livingEntity);
-        if (livingEntity.isBaby() && !(model instanceof AgeableListModel<?> && model.young)) {
+        boolean ageableModelHandlesBabyScale = model instanceof AgeableListModel<?> && model.young;
+        boolean rendererHandlesBabyScale = livingEntity.isBaby() && rendererScaleDiffersFromBase(rendererScale, renderer, livingEntity);
+        if (livingEntity.isBaby() && !ageableModelHandlesBabyScale && !rendererHandlesBabyScale) {
             float boundsScale = getBoundingBoxScale(livingEntity, extracted);
             if (Float.isFinite(boundsScale) && boundsScale > 0.05F) {
                 return rendererScale * boundsScale;
@@ -237,6 +239,13 @@ public final class MobRagdollClientExtractor {
         } catch (Throwable error) {
             return getRendererScale(renderer);
         }
+    }
+
+    private static boolean rendererScaleDiffersFromBase(float rendererScale, LivingEntityRenderer<?, ?> renderer, LivingEntity entity) {
+        float baseScale = getRendererScale(renderer) * entity.getScale();
+        return Float.isFinite(rendererScale)
+                && Float.isFinite(baseScale)
+                && Math.abs(rendererScale - baseScale) > 1.0E-3F;
     }
 
     private static float getBoundingBoxScale(LivingEntity livingEntity, ExtractedMobModel extracted) {
