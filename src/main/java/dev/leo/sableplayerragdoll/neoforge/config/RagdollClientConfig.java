@@ -22,6 +22,10 @@ public final class RagdollClientConfig {
       )
       .defineInRange("subLevelCameraDistance", 4.0, 0.5, 16.0);
 
+   public static final BooleanValue SHOW_CONTROLS_HINT = BUILDER.translation("sable_player_ragdoll.configuration.show_controls_hint")
+      .comment("Show the on-screen controls hint popup when entering ragdoll mode.")
+      .define("showControlsHint", true);
+
    public static final ModConfigSpec SPEC = BUILDER.build();
 
    private RagdollClientConfig() {
@@ -37,5 +41,9 @@ public final class RagdollClientConfig {
 
    public static double subLevelCameraDistance() {
       return SUB_LEVEL_CAMERA_DISTANCE.get();
+   }
+
+   public static boolean showControlsHint() {
+      return SHOW_CONTROLS_HINT.get();
    }
 }

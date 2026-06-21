@@ -8,6 +8,8 @@ public final class RagdollSettings {
    private static double maxFlingSpeed = 128.0;
    private static double ragdollMaxLaunchSpeed = 128.0;
    private static boolean partSelfCollision = true;
+   private static boolean grabBreakEnabled = true;
+   private static double grabBreakDistance = 0.275;
    private static boolean expireAfterDuration = false;
    private static int ragdollDurationTicks = 40;
    private static boolean expireAfterSafetyTimeout = false;
@@ -52,6 +54,12 @@ public final class RagdollSettings {
 
    public static boolean partSelfCollision() { return partSelfCollision; }
    public static void setPartSelfCollision(boolean v) { partSelfCollision = v; }
+
+   public static boolean grabBreakEnabled() { return grabBreakEnabled; }
+   public static void setGrabBreakEnabled(boolean v) { grabBreakEnabled = v; }
+
+   public static double grabBreakDistance() { return grabBreakDistance; }
+   public static void setGrabBreakDistance(double v) { grabBreakDistance = Math.max(0.0, v); }
 
    public static boolean expireAfterDuration() { return expireAfterDuration; }
    public static void setExpireAfterDuration(boolean v) { expireAfterDuration = v; }

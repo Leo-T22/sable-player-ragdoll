@@ -6,6 +6,8 @@ import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollCameraHelper;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollDollEntityRenderer;
+import dev.leo.sableplayerragdoll.neoforge.client.RagdollControlsHint;
+import dev.leo.sableplayerragdoll.neoforge.client.RagdollControlsHud;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollInputClient;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollKeybinds;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollPartBlockEntityRenderer;
@@ -17,6 +19,7 @@ import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
 import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
 import dev.leo.sableplayerragdoll.mob.client.MobRagdollPartBlockEntityRenderer;
 import net.minecraft.client.Minecraft;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.entity.BlockEntityType;
@@ -28,6 +31,7 @@ import net.neoforged.neoforge.client.event.RenderHighlightEvent;
 import net.neoforged.neoforge.client.gui.ConfigurationScreen;
 import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.EntityRenderersEvent.RegisterRenderers;
+import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.common.NeoForge;
 
 @Mod(value = "sable_player_ragdoll", dist = {Dist.CLIENT})
@@ -39,9 +43,11 @@ public final class SablePlayerRagdollNeoForgeClient {
       RagdollCameraHelper.init();
       RagdollKeybinds.init(modBus);
       RagdollInputClient.init();
+      RagdollControlsHint.init();
       RagdollGrabClient.init();
       RagdollBlockInteractClient.init();
       modBus.addListener(SablePlayerRagdollNeoForgeClient::registerEntityRenderers);
+      modBus.addListener(SablePlayerRagdollNeoForgeClient::registerGuiLayers);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForgeClient::onRenderHighlight);
    }
 
@@ -54,6 +60,13 @@ public final class SablePlayerRagdollNeoForgeClient {
       if (block instanceof RagdollPartBlock || block instanceof MobRagdollPartBlock) {
          event.setCanceled(true);
       }
+   }
+
+   private static void registerGuiLayers(RegisterGuiLayersEvent event) {
+      event.registerAboveAll(
+         ResourceLocation.fromNamespaceAndPath("sable_player_ragdoll", "ragdoll_controls"),
+         RagdollControlsHud::render
+      );
    }
 
    @SuppressWarnings("unchecked")

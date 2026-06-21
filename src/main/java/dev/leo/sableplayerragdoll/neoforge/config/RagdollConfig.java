@@ -58,6 +58,12 @@ public final class RagdollConfig {
    public static final BooleanValue PART_SELF_COLLISION = BUILDER.translation("sable_player_ragdoll.configuration.part_self_collision")
       .comment("When true, the body parts of a ragdoll collide with each other.")
       .define("partSelfCollision", true);
+   public static final BooleanValue GRAB_BREAK_ENABLED = BUILDER.translation("sable_player_ragdoll.configuration.grab_break_enabled")
+      .comment("When true, a hand grip slips loose once it is stretched past the break distance under load.")
+      .define("grabBreakEnabled", true);
+   public static final DoubleValue GRAB_BREAK_DISTANCE = BUILDER.translation("sable_player_ragdoll.configuration.grab_break_distance")
+      .comment("How far (blocks) the hand can be pulled from the spot it grabbed before the grip slips.")
+      .defineInRange("grabBreakDistance", 0.275, 0.05, 5.0);
 
    static {
       BUILDER.pop();
@@ -155,6 +161,8 @@ public final class RagdollConfig {
       RagdollSettings.setMaxFlingSpeed((Double) MAX_FLING_SPEED.get());
       RagdollSettings.setRagdollMaxLaunchSpeed((Double) RAGDOLL_MAX_LAUNCH_SPEED.get());
       RagdollSettings.setPartSelfCollision((Boolean) PART_SELF_COLLISION.get());
+      RagdollSettings.setGrabBreakEnabled((Boolean) GRAB_BREAK_ENABLED.get());
+      RagdollSettings.setGrabBreakDistance((Double) GRAB_BREAK_DISTANCE.get());
       RagdollSettings.setImpactDamageEnabled((Boolean) IMPACT_DAMAGE_ENABLED.get());
       RagdollSettings.setImpactFeedbackThreshold((Double) IMPACT_FEEDBACK_THRESHOLD.get());
       RagdollSettings.setImpactDamageThreshold((Double) IMPACT_DAMAGE_THRESHOLD.get());

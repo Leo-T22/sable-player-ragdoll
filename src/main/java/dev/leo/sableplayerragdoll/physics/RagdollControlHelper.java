@@ -1,6 +1,7 @@
 package dev.leo.sableplayerragdoll.physics;
 
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
+import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
@@ -41,14 +42,16 @@ public final class RagdollControlHelper {
    private static final double MAX_ARM_REACH_ANGULAR_SPEED = 8.0;
    private static final double ARM_COUPLE_HALF_LENGTH = 0.3;
    private static final double HAND_LOCAL_DROP = 0.35;
-   private static final double GRAB_STIFFNESS = 500.0;
-   private static final double GRAB_DAMPING = 50.0;
-   private static final double GRAB_MAX_FORCE = 200.0;
+   private static final double GRAB_STIFFNESS = 4000.0;
+   private static final double GRAB_DAMPING = 150.0;
+   private static final double GRAB_MAX_FORCE = 1200.0;
    private static final double GRAB_RADIUS = 0.15;
+   private static final int GRAB_BREAK_TICKS = 4;
    private static final Map<UUID, ControlInput> INPUTS = new ConcurrentHashMap<>();
    private static final Map<UUID, ArmInput> ARM_INPUTS = new ConcurrentHashMap<>();
    // Active hand-grab constraints, keyed by arm sub-level id.
-   private static final Map<UUID, PhysicsConstraintHandle> ARM_GRABS = new ConcurrentHashMap<>();
+   private static final Map<UUID, ArmGrab> ARM_GRABS = new ConcurrentHashMap<>();
+   private static final Map<UUID, Integer> ARM_GRAB_STRAIN = new ConcurrentHashMap<>();
 
    private RagdollControlHelper() {
    }
@@ -116,16 +119,20 @@ public final class RagdollControlHelper {
          && level.getGameTime() - input.gameTime() <= (long) INPUT_TIMEOUT_TICKS
          && (bodyPart == BodyPart.LEFT_ARM ? input.leftGrab() : input.rightGrab());
 
-      PhysicsConstraintHandle existing = ARM_GRABS.get(armId);
+      ArmGrab existing = ARM_GRABS.get(armId);
       if (!active) {
          if (existing != null) {
-            existing.remove();
-            ARM_GRABS.remove(armId);
+            existing.handle().remove();
+            releaseGrab(armId);
          }
          return;
       }
       if (existing != null) {
-         return; // already holding on
+         if (gripOverstrained(armSubLevel, existing, armId)) {
+            existing.handle().remove();
+            releaseGrab(armId);
+         }
+         return; // already holding on (or just slipped)
       }
 
       BlockPos center = armSubLevel.getPlot().getCenterBlock();
@@ -135,13 +142,16 @@ public final class RagdollControlHelper {
       ServerSubLevel target = findGrabTarget(level, armSubLevel, worldHand);
       Object body1;
       Vector3d anchor1;
+      Vec3 anchorPoint;
       if (target != null) {
          Vec3 targetLocal = target.logicalPose().transformPositionInverse(worldHand);
          body1 = target;
          anchor1 = new Vector3d(targetLocal.x, targetLocal.y, targetLocal.z);
+         anchorPoint = targetLocal;
       } else if (handTouchingBlock(level, worldHand)) {
          body1 = null;
          anchor1 = new Vector3d(worldHand.x, worldHand.y, worldHand.z);
+         anchorPoint = worldHand;
       } else {
          return;
       }
@@ -156,9 +166,41 @@ public final class RagdollControlHelper {
          physicsSystem.getPipeline(), body1, armSubLevel,
          SableConstraintCompat.free(anchor1, localAnchor, new Quaterniond()));
       for (ConstraintJointAxis axis : ConstraintJointAxis.LINEAR) {
-         handle.setMotor(axis, 0.0, GRAB_STIFFNESS, GRAB_DAMPING, true, GRAB_MAX_FORCE);
+         handle.setMotor(axis, 0.0, GRAB_STIFFNESS, GRAB_DAMPING, false, GRAB_MAX_FORCE);
       }
-      ARM_GRABS.put(armId, handle);
+      ARM_GRABS.put(armId, new ArmGrab(handle, target, anchorPoint, localHand));
+      ARM_GRAB_STRAIN.remove(armId);
+   }
+
+   private static boolean gripOverstrained(ServerSubLevel armSubLevel, ArmGrab grab, UUID armId) {
+      if (!grab.handle().isValid() || (grab.target() != null && grab.target().isRemoved())) {
+         ARM_GRAB_STRAIN.remove(armId);
+         return true;
+      }
+      double breakDistance = RagdollSettings.grabBreakDistance();
+      if (!RagdollSettings.grabBreakEnabled() || breakDistance <= 0.0) {
+         ARM_GRAB_STRAIN.remove(armId);
+         return false;
+      }
+      Vec3 handNow = armSubLevel.logicalPose().transformPosition(grab.armLocalHand());
+      Vec3 anchorNow = grab.target() != null
+         ? grab.target().logicalPose().transformPosition(grab.anchorPoint())
+         : grab.anchorPoint();
+      if (handNow.distanceTo(anchorNow) < breakDistance) {
+         ARM_GRAB_STRAIN.remove(armId);
+         return false;
+      }
+      int ticks = ARM_GRAB_STRAIN.merge(armId, 1, Integer::sum);
+      return ticks >= GRAB_BREAK_TICKS;
+   }
+
+   private static void releaseGrab(UUID armId) {
+      ARM_GRABS.remove(armId);
+      ARM_GRAB_STRAIN.remove(armId);
+   }
+
+   private record ArmGrab(PhysicsConstraintHandle handle, @Nullable ServerSubLevel target,
+                          Vec3 anchorPoint, Vec3 armLocalHand) {
    }
 
    /** Finds another sub-level touching the hand to grab, skipping the arm itself and its own ragdoll. */
