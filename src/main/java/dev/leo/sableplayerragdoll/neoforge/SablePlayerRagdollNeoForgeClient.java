@@ -14,6 +14,7 @@ import dev.leo.sableplayerragdoll.neoforge.client.RagdollGrabClient;
 import dev.leo.sableplayerragdoll.neoforge.client.RagdollBlockInteractClient;
 import dev.leo.sableplayerragdoll.neoforge.config.RagdollClientConfig;
 import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
+import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
 import dev.leo.sableplayerragdoll.mob.client.MobRagdollPartBlockEntityRenderer;
 import net.minecraft.client.Minecraft;
 import net.minecraft.world.entity.EntityType;
@@ -46,7 +47,11 @@ public final class SablePlayerRagdollNeoForgeClient {
 
    private static void onRenderHighlight(RenderHighlightEvent.Block event) {
       Level level = Minecraft.getInstance().level;
-      if (level != null && level.getBlockState(event.getTarget().getBlockPos()).getBlock() instanceof RagdollPartBlock) {
+      if (level == null) {
+         return;
+      }
+      var block = level.getBlockState(event.getTarget().getBlockPos()).getBlock();
+      if (block instanceof RagdollPartBlock || block instanceof MobRagdollPartBlock) {
          event.setCanceled(true);
       }
    }

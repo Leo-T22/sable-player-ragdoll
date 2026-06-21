@@ -1,6 +1,7 @@
 package dev.leo.sableplayerragdoll.neoforge.client;
 
 import dev.leo.sableplayerragdoll.RagdollCollisionRules;
+import dev.leo.sableplayerragdoll.config.RagdollSettings;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.neoforge.network.RagdollGrabPacket;
@@ -45,6 +46,7 @@ public final class RagdollGrabClient {
       Minecraft minecraft = Minecraft.getInstance();
       LocalPlayer player = minecraft.player;
       if (player == null || minecraft.level == null || player.isSpectator()) { stopGrab(); return; }
+      if (!RagdollSettings.grabEnabled()) { stopGrab(); return; }
       if (player.isPassenger()) { stopGrab(); return; }
       if (!minecraft.options.keyUse.isDown()) { stopGrab(); return; }
       if (!player.getMainHandItem().isEmpty()) { stopGrab(); return; }

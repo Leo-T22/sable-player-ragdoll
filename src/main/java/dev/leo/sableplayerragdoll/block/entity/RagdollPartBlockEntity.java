@@ -65,6 +65,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    private ItemStack chestItem = ItemStack.EMPTY;
    private ItemStack legsItem = ItemStack.EMPTY;
    private ItemStack feetItem = ItemStack.EMPTY;
+   private float maxHealth = 20f;
    private Map<String, List<ItemStack>> curiosItems = new LinkedHashMap<>();
    private Map<String, List<ItemStack>> accessoriesItems = new LinkedHashMap<>();
    private final Map<UUID, GrabConstraint> grabbers = new HashMap<>();
@@ -85,6 +86,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    public void configure(BodyPart bodyPart, Player player) {
       this.configure(bodyPart, player.getGameProfile());
+      this.maxHealth = (float) player.getMaxHealth();
       this.mainHandItem = player.getItemBySlot(EquipmentSlot.MAINHAND).copy();
       this.offHandItem = player.getItemBySlot(EquipmentSlot.OFFHAND).copy();
       this.headItem = player.getItemBySlot(EquipmentSlot.HEAD).copy();
@@ -96,6 +98,10 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    public BodyPart bodyPart() {
       return this.bodyPart;
+   }
+
+   public float maxHealth() {
+      return this.maxHealth;
    }
 
    public void startGrab(UUID playerId) {
@@ -255,6 +261,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
          tag.putUUID("SkinUuid", this.skinUuid);
       }
 
+      tag.putFloat("MaxHealth", this.maxHealth);
       tag.putString("SkinName", this.skinName);
       tag.putString("SkinTextures", this.skinTextures);
       tag.putString("SkinTexturesSignature", this.skinTexturesSignature);
@@ -272,6 +279,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
       super.loadAdditional(tag, registries);
       this.bodyPart = BodyPart.byName(tag.getString("BodyPart"));
+      this.maxHealth = tag.contains("MaxHealth") ? tag.getFloat("MaxHealth") : 20f;
       this.skinUuid = tag.hasUUID("SkinUuid") ? tag.getUUID("SkinUuid") : null;
       this.skinName = tag.getString("SkinName").isBlank() ? "Player" : tag.getString("SkinName");
       this.skinTextures = tag.getString("SkinTextures");
