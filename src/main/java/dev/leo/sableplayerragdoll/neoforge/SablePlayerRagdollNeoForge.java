@@ -24,10 +24,10 @@ import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntities;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.api.MobRagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
 import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
 import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
-import dev.leo.sableplayerragdoll.mob.item.MobRagdollItems;
 import dev.leo.sableplayerragdoll.mob.network.MobRagdollNetworking;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntities;
@@ -114,7 +114,6 @@ public final class SablePlayerRagdollNeoForge {
       RagdollConfig.register(modContainer);
       modBus.addListener(RagdollNetworking::register);
       MobRagdollBlocks.register(modBus);
-      MobRagdollItems.register(modBus);
       modBus.addListener(MobRagdollNetworking::register);
       modBus.addListener(SablePlayerRagdollNeoForge::onCommonSetup);
       modBus.addListener(SablePlayerRagdollNeoForge::registerAttributes);
@@ -314,18 +313,27 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    private static void onAttackEntity(AttackEntityEvent event) {
-      if (!(event.getEntity() instanceof ServerPlayer attacker) || !(event.getTarget() instanceof ServerPlayer target)) {
+      if (!(event.getEntity() instanceof ServerPlayer attacker)) {
          return;
       }
       ItemStack weapon = attacker.getMainHandItem();
       if (!RagdollItemTags.canRagdollOnHit(weapon)) {
          return;
       }
-      if (RagdollItemTags.requiresCriticalHit(weapon) && !isCriticalHit(attacker, target)) {
+      if (RagdollItemTags.requiresCriticalHit(weapon) && !isCriticalHit(attacker)) {
          return;
       }
 
-      RagdollRegistry.triggerWeaponHit(attacker, target);
+      if (event.getTarget() instanceof ServerPlayer target) {
+         RagdollRegistry.triggerWeaponHit(attacker, target);
+      } else if (event.getTarget() instanceof LivingEntity mob && attacker.level() instanceof ServerLevel level) {
+         Vec3 look = attacker.getLookAngle();
+         Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
+         Vec3 direction = horizontal.lengthSqr() > 1.0E-6 ? horizontal.normalize() : new Vec3(0.0, 0.0, 1.0);
+         Vec3 linear = direction.scale(6.0).add(0.0, 8.0, 0.0);
+         MobRagdollAssembly.requestLaunch(level, mob, linear, Vec3.ZERO,
+            MobRagdollLaunchOptions.builder().durationTicks(200).build());
+      }
    }
 
    @javax.annotation.Nullable
@@ -449,7 +457,7 @@ public final class SablePlayerRagdollNeoForge {
       return 0.0F; // snowball, egg, wind charge, etc. — no direct damage in vanilla
    }
 
-   private static boolean isCriticalHit(ServerPlayer attacker, ServerPlayer target) {
+   private static boolean isCriticalHit(ServerPlayer attacker) {
       return attacker.fallDistance > 0.0F
          && !attacker.onGround()
          && !attacker.onClimbable()

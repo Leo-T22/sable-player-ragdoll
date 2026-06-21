@@ -100,11 +100,11 @@ public final class MobRagdollAssembly {
 
     public static void spawn(ServerLevel level, LivingEntity entity, List<PartSpawn> parts,
                               Vec3 linearVelocity, Vec3 angularVelocity) {
-        spawn(level, entity, parts, linearVelocity, angularVelocity, RAGDOLL_DURATION_TICKS, true);
+        spawn(level, entity, parts, linearVelocity, angularVelocity, RAGDOLL_DURATION_TICKS);
     }
 
     public static void spawn(ServerLevel level, LivingEntity entity, List<PartSpawn> parts,
-                              Vec3 linearVelocity, Vec3 angularVelocity, int durationTicks, boolean autoSeat) {
+                              Vec3 linearVelocity, Vec3 angularVelocity, int durationTicks) {
         if (parts.isEmpty()) {
             return;
         }
@@ -137,7 +137,7 @@ public final class MobRagdollAssembly {
         SPAWN_QUEUE.add(new PendingAssembly(
                 level, entity.getUUID(), entity.getId(), List.copyOf(parts),
                 entity.position(), entity.blockPosition(), right, forward, baseOrientation,
-                linearVelocity, angularVelocity, durationTicks, autoSeat, entitySnapshot));
+                linearVelocity, angularVelocity, durationTicks, entitySnapshot));
         drainSpawnQueue(level);
     }
 
@@ -178,7 +178,7 @@ public final class MobRagdollAssembly {
             return false;
         }
         spawn(level, entity, parts, pending.linear(), pending.angular(),
-                pending.options().durationTicks(), pending.options().autoSeat());
+                pending.options().durationTicks());
         return true;
     }
 
@@ -232,15 +232,10 @@ public final class MobRagdollAssembly {
         Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
         NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(entity, exitVelocity, reason));
         entity.stopRiding();
-        entity.setInvisible(false);
-        entity.noPhysics = false;
-        entity.refreshDimensions();
+        showRagdollSource(entity);
         if (state != null) {
             Vec3 safe = rootPosition(state);
             entity.moveTo(safe.x, safe.y, safe.z, entity.getYRot(), entity.getXRot());
-        }
-        if (entity instanceof Mob mob) {
-            mob.setNoAi(false);
         }
         NEXT_IMPACT_DAMAGE_TICK.remove(uuid);
         NEXT_IMPACT_SOUND_TICK.remove(uuid);
@@ -332,16 +327,30 @@ public final class MobRagdollAssembly {
         DEFERRED_RESTORE_REASON.remove(uuid);
     }
 
-    public static void hideLoadedRagdollSource(ServerLevel level, LivingEntity entity) {
-        if (MobRagdollSavedData.get(level).getEntry(entity.getUUID()) == null) {
-            return;
-        }
+    private static void hideRagdollSource(LivingEntity entity) {
         if (entity instanceof Mob mob) {
             mob.setNoAi(true);
         }
         entity.setInvisible(true);
         entity.noPhysics = true;
         entity.refreshDimensions();
+    }
+
+
+    private static void showRagdollSource(LivingEntity entity) {
+        if (entity instanceof Mob mob) {
+            mob.setNoAi(false);
+        }
+        entity.setInvisible(false);
+        entity.noPhysics = false;
+        entity.refreshDimensions();
+    }
+
+    public static void hideLoadedRagdollSource(ServerLevel level, LivingEntity entity) {
+        if (MobRagdollSavedData.get(level).getEntry(entity.getUUID()) == null) {
+            return;
+        }
+        hideRagdollSource(entity);
     }
 
     public static InteractionResult interactWithPart(ServerLevel level, BlockPos partPos, Player player, InteractionHand hand) {
@@ -452,7 +461,7 @@ public final class MobRagdollAssembly {
             }
             handledTrigger = true;
 
-            if (now - saved.spawnedAtTick() >= RAGDOLL_DURATION_TICKS) {
+            if (now - saved.spawnedAtTick() >= saved.durationTicks()) {
                 expired.add(uuid);
                 continue;
             }
@@ -521,16 +530,11 @@ public final class MobRagdollAssembly {
 
             JointResult joints = attachJoints(level, spawnedParts);
             if (livingEntity != null) {
-                if (livingEntity instanceof Mob mob) {
-                    mob.setNoAi(true);
-                }
-                livingEntity.setInvisible(true);
-                livingEntity.noPhysics = true;
-                livingEntity.refreshDimensions();
+                hideRagdollSource(livingEntity);
             }
             CONVERTED_ENTITIES.add(uuid);
             RAGDOLL_STATES.put(uuid, new RagdollState(List.copyOf(spawnedParts),
-                    saved.spawnedAtTick(), saved.preRagdollPos(), RAGDOLL_DURATION_TICKS));
+                    saved.spawnedAtTick(), saved.preRagdollPos(), saved.durationTicks()));
             SablePlayerRagdoll.LOGGER.info("[mob-ragdoll] restored {} parts with {} joints for entity {} (source entity loaded={})",
                     spawnedParts.size(), joints.count(), uuid, livingEntity != null);
             if (joints.representative() != null) {
@@ -674,11 +678,7 @@ public final class MobRagdollAssembly {
             RESTORED_HANDLES.put(entity.getUUID(), joints.representative());
             RESTORED_UUIDS.add(entity.getUUID());
         }
-        if (pending.autoSeat) {
-            entity.setInvisible(true);
-            entity.noPhysics = true;
-            entity.refreshDimensions();
-        }
+        hideRagdollSource(entity);
         RAGDOLL_STATES.put(entity.getUUID(), new RagdollState(List.copyOf(spawnedParts), level.getGameTime(), entity.position(), pending.durationTicks));
 
         Map<String, UUID> partIds = new LinkedHashMap<>();
@@ -694,6 +694,7 @@ public final class MobRagdollAssembly {
         MobRagdollSavedData.get(level).addEntry(
                 entity.getUUID(),
                 level.getGameTime(),
+                pending.durationTicks,
                 entity.position(),
                 entity.getType().builtInRegistryHolder().key().location().toString(),
                 pending.entitySnapshot,
@@ -766,7 +767,6 @@ public final class MobRagdollAssembly {
         }
         MobRagdollSavedData savedData = MobRagdollSavedData.get(level);
         MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
-        LivingEntity restoredEntity = saved == null ? null : recreateEntity(level, uuid, saved);
         RagdollState state = RAGDOLL_STATES.remove(uuid);
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         CONVERTED_ENTITIES.remove(uuid);
@@ -775,17 +775,16 @@ public final class MobRagdollAssembly {
         NEXT_IMPACT_DAMAGE_TICK.remove(uuid);
         NEXT_IMPACT_SOUND_TICK.remove(uuid);
         clearRestoreDeferral(uuid);
-        LivingEntity endTarget = level.getEntity(uuid) instanceof LivingEntity loadedTarget ? loadedTarget : restoredEntity;
-        if (endTarget != null) {
+
+        LivingEntity target = level.getEntity(uuid) instanceof LivingEntity loaded ? loaded
+                : (saved == null ? null : recreateEntity(level, uuid, saved));
+        if (target != null) {
             Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
-            NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(endTarget, exitVelocity, MobRagdollEndEvent.Reason.EXPIRED));
-        }
-        if (level.getEntity(uuid) instanceof LivingEntity loaded) {
-            if (loaded.isPassenger()) {
-                loaded.stopRiding();
+            NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(target, exitVelocity, MobRagdollEndEvent.Reason.EXPIRED));
+            if (target.isPassenger()) {
+                target.stopRiding();
             }
-            loaded.setInvisible(false);
-            loaded.refreshDimensions();
+            showRagdollSource(target);
         }
         if (saved != null) {
             removeSavedSubLevels(container, saved);
@@ -799,9 +798,6 @@ public final class MobRagdollAssembly {
                     removeSubLevelIfPresent(container, subLevel);
                 }
             }
-        }
-        if (restoredEntity instanceof Mob mob) {
-            mob.setNoAi(false);
         }
     }
 
@@ -1354,14 +1350,13 @@ public final class MobRagdollAssembly {
         final Vec3 linearVelocity;
         final Vec3 angularVelocity;
         final int durationTicks;
-        final boolean autoSeat;
         final CompoundTag entitySnapshot;
         int nextPartIndex = 0;
         final List<SpawnedPart> assembled = new ArrayList<>();
 
         PendingAssembly(ServerLevel level, UUID entityUUID, int entityNetworkId, List<PartSpawn> parts,
                         Vec3 base, BlockPos baseBlockPos, Vec3 right, Vec3 forward, Quaterniond baseOrientation,
-                        Vec3 linearVelocity, Vec3 angularVelocity, int durationTicks, boolean autoSeat,
+                        Vec3 linearVelocity, Vec3 angularVelocity, int durationTicks,
                         CompoundTag entitySnapshot) {
             this.level = level;
             this.entityUUID = entityUUID;
@@ -1375,7 +1370,6 @@ public final class MobRagdollAssembly {
             this.linearVelocity = linearVelocity;
             this.angularVelocity = angularVelocity;
             this.durationTicks = durationTicks;
-            this.autoSeat = autoSeat;
             this.entitySnapshot = entitySnapshot;
         }
     }

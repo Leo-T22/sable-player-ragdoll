@@ -16,6 +16,7 @@ import net.minecraft.world.phys.Vec3;
 
 public class MobRagdollSavedData extends SavedData {
     private static final String DATA_NAME = "sable_player_ragdoll_mob_ragdolls";
+    private static final int DEFAULT_DURATION_TICKS = 80;
     private static final SavedData.Factory<MobRagdollSavedData> FACTORY = new SavedData.Factory<>(
             MobRagdollSavedData::new, MobRagdollSavedData::load, null
     );
@@ -26,11 +27,12 @@ public class MobRagdollSavedData extends SavedData {
         return level.getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
     }
 
-    public void addEntry(UUID entityId, long spawnedAtTick, Vec3 preRagdollPos,
+    public void addEntry(UUID entityId, long spawnedAtTick, int durationTicks, Vec3 preRagdollPos,
                           String entityType, CompoundTag entityData,
                           Map<String, PartInfo> partInfos, Map<String, UUID> partIds) {
         entries.put(entityId, new Entry(
                 spawnedAtTick,
+                durationTicks,
                 preRagdollPos,
                 entityType,
                 entityData == null ? new CompoundTag() : entityData.copy(),
@@ -60,6 +62,7 @@ public class MobRagdollSavedData extends SavedData {
             CompoundTag entryTag = new CompoundTag();
             entryTag.putUUID("EntityId", entry.getKey());
             entryTag.putLong("SpawnedAt", entry.getValue().spawnedAtTick);
+            entryTag.putInt("DurationTicks", entry.getValue().durationTicks);
             entryTag.putString("EntityType", entry.getValue().entityType);
             entryTag.put("EntityData", entry.getValue().entityData.copy());
             CompoundTag posTag = new CompoundTag();
@@ -104,6 +107,9 @@ public class MobRagdollSavedData extends SavedData {
             CompoundTag entryTag = list.getCompound(i);
             UUID entityId = entryTag.getUUID("EntityId");
             long spawnedAtTick = entryTag.getLong("SpawnedAt");
+            int durationTicks = entryTag.contains("DurationTicks", Tag.TAG_INT)
+                    ? entryTag.getInt("DurationTicks")
+                    : DEFAULT_DURATION_TICKS;
             String entityType = entryTag.getString("EntityType");
             CompoundTag entityData = entryTag.contains("EntityData", Tag.TAG_COMPOUND)
                     ? entryTag.getCompound("EntityData").copy()
@@ -133,12 +139,12 @@ public class MobRagdollSavedData extends SavedData {
                     partIds.put(name, partTag.getUUID("SubLevelId"));
                 }
             }
-            data.entries.put(entityId, new Entry(spawnedAtTick, preRagdollPos, entityType, entityData, partInfos, partIds));
+            data.entries.put(entityId, new Entry(spawnedAtTick, durationTicks, preRagdollPos, entityType, entityData, partInfos, partIds));
         }
         return data;
     }
 
-    public record Entry(long spawnedAtTick, Vec3 preRagdollPos, String entityType, CompoundTag entityData,
+    public record Entry(long spawnedAtTick, int durationTicks, Vec3 preRagdollPos, String entityType, CompoundTag entityData,
                         Map<String, PartInfo> partInfos, Map<String, UUID> partIds) {
         public Entry {
             entityData = entityData == null ? new CompoundTag() : entityData.copy();

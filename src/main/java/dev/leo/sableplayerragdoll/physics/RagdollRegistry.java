@@ -70,6 +70,7 @@ public final class RagdollRegistry {
       RagdollPoseSnapshot initialPose
    ) {
       if (!RagdollSettings.enabled()) return null;
+      if (player.isSpectator()) return null;
       SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
       if (physicsSystem == null) return null;
 

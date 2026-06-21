@@ -34,6 +34,5 @@
   "sable_player_ragdoll.configuration.mob_mass_density": "Ragdoll Mass Density",
   "sable_player_ragdoll.configuration.debug": "Debug",
   "sable_player_ragdoll.configuration.debug_logging": "Debug Logging",
-  "block.sable_player_ragdoll.mob_ragdoll_part": "Mob Ragdoll Part",
-  "item.sable_player_ragdoll.mob_ragdoll_debug_stick": "Mob Ragdoll Debug Stick"
+  "block.sable_player_ragdoll.mob_ragdoll_part": "Mob Ragdoll Part"
 }

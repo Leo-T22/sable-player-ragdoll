@@ -1,6 +1,6 @@
 package dev.leo.sableplayerragdoll.mob.api;
 
-public record MobRagdollLaunchOptions(boolean autoSeat, int durationTicks) {
+public record MobRagdollLaunchOptions(int durationTicks) {
     public static final int DEFAULT_DURATION_TICKS = 80;
 
     public static MobRagdollLaunchOptions defaults() {
@@ -12,15 +12,9 @@ public record MobRagdollLaunchOptions(boolean autoSeat, int durationTicks) {
     }
 
     public static final class Builder {
-        private boolean autoSeat = true;
         private int durationTicks = DEFAULT_DURATION_TICKS;
 
         private Builder() {
-        }
-
-        public Builder autoSeat(boolean autoSeat) {
-            this.autoSeat = autoSeat;
-            return this;
         }
 
         public Builder durationTicks(int durationTicks) {
@@ -29,7 +23,7 @@ public record MobRagdollLaunchOptions(boolean autoSeat, int durationTicks) {
         }
 
         public MobRagdollLaunchOptions build() {
-            return new MobRagdollLaunchOptions(this.autoSeat, this.durationTicks);
+            return new MobRagdollLaunchOptions(this.durationTicks);
         }
     }
 }
