@@ -130,6 +130,9 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
       if (this.bodyPart == BodyPart.TORSO) {
          RagdollControlHelper.apply(subLevel, handle, timeStep);
+      } else if (this.bodyPart == BodyPart.LEFT_ARM || this.bodyPart == BodyPart.RIGHT_ARM) {
+         RagdollControlHelper.applyArm(subLevel, handle, timeStep, this.bodyPart);
+         RagdollControlHelper.applyArmGrab(subLevel, this.bodyPart);
       }
    }
 

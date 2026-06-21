@@ -24,6 +24,7 @@ public final class RagdollNetworking {
       registrar.playToServer(RagdollTriggerPacket.TYPE, RagdollTriggerPacket.STREAM_CODEC, RagdollTriggerPacket::handle);
       registrar.playToServer(RagdollGrabPacket.TYPE, RagdollGrabPacket.STREAM_CODEC, RagdollGrabPacket::handle);
       registrar.playToServer(RagdollInputPacket.TYPE, RagdollInputPacket.STREAM_CODEC, RagdollInputPacket::handle);
+      registrar.playToServer(RagdollArmInputPacket.TYPE, RagdollArmInputPacket.STREAM_CODEC, RagdollArmInputPacket::handle);
       registrar.playToServer(RagdollPoseResponsePacket.TYPE, RagdollPoseResponsePacket.STREAM_CODEC, RagdollPoseResponsePacket::handle);
    }
 
