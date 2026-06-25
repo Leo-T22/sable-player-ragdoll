@@ -11,16 +11,32 @@ import net.minecraft.world.item.ItemStack;
 public record RagdollEquipmentSnapshot(
    Map<EquipmentSlot, ItemStack> vanillaItems,
    Map<String, List<ItemStack>> curioItems,
-   Map<String, List<ItemStack>> accessoriesItems
+   Map<String, List<ItemStack>> curioCosmeticItems,
+   Map<String, List<Boolean>> curioRenderOptions,
+   Map<String, List<ItemStack>> accessoriesItems,
+   Map<String, List<ItemStack>> accessoriesCosmeticItems,
+   Map<String, List<Boolean>> accessoriesRenderOptions
 ) {
+   public RagdollEquipmentSnapshot(
+      Map<EquipmentSlot, ItemStack> vanillaItems,
+      Map<String, List<ItemStack>> curioItems,
+      Map<String, List<ItemStack>> accessoriesItems
+   ) {
+      this(vanillaItems, curioItems, Map.of(), Map.of(), accessoriesItems, Map.of(), Map.of());
+   }
+
    public RagdollEquipmentSnapshot {
       vanillaItems = copyVanilla(vanillaItems);
       curioItems = copySlotMap(curioItems);
+      curioCosmeticItems = copySlotMap(curioCosmeticItems);
+      curioRenderOptions = copyBooleanSlotMap(curioRenderOptions);
       accessoriesItems = copySlotMap(accessoriesItems);
+      accessoriesCosmeticItems = copySlotMap(accessoriesCosmeticItems);
+      accessoriesRenderOptions = copyBooleanSlotMap(accessoriesRenderOptions);
    }
 
    public static RagdollEquipmentSnapshot empty() {
-      return new RagdollEquipmentSnapshot(Map.of(), Map.of(), Map.of());
+      return new RagdollEquipmentSnapshot(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of());
    }
 
    public RagdollEquipmentSnapshot merge(RagdollEquipmentSnapshot other) {
@@ -34,15 +50,37 @@ public record RagdollEquipmentSnapshot(
       curios.putAll(this.curioItems);
       curios.putAll(other.curioItems);
 
+      Map<String, List<ItemStack>> curioCosmetics = new LinkedHashMap<>();
+      curioCosmetics.putAll(this.curioCosmeticItems);
+      curioCosmetics.putAll(other.curioCosmeticItems);
+
+      Map<String, List<Boolean>> curioRenderOptions = new LinkedHashMap<>();
+      curioRenderOptions.putAll(this.curioRenderOptions);
+      curioRenderOptions.putAll(other.curioRenderOptions);
+
       Map<String, List<ItemStack>> accessories = new LinkedHashMap<>();
       accessories.putAll(this.accessoriesItems);
       accessories.putAll(other.accessoriesItems);
 
-      return new RagdollEquipmentSnapshot(vanilla, curios, accessories);
+      Map<String, List<ItemStack>> accessoryCosmetics = new LinkedHashMap<>();
+      accessoryCosmetics.putAll(this.accessoriesCosmeticItems);
+      accessoryCosmetics.putAll(other.accessoriesCosmeticItems);
+
+      Map<String, List<Boolean>> accessoryRenderOptions = new LinkedHashMap<>();
+      accessoryRenderOptions.putAll(this.accessoriesRenderOptions);
+      accessoryRenderOptions.putAll(other.accessoriesRenderOptions);
+
+      return new RagdollEquipmentSnapshot(vanilla, curios, curioCosmetics, curioRenderOptions, accessories, accessoryCosmetics, accessoryRenderOptions);
    }
 
    public boolean isEmpty() {
-      return vanillaItems.isEmpty() && curioItems.isEmpty() && accessoriesItems.isEmpty();
+      return vanillaItems.isEmpty()
+         && curioItems.isEmpty()
+         && curioCosmeticItems.isEmpty()
+         && curioRenderOptions.isEmpty()
+         && accessoriesItems.isEmpty()
+         && accessoriesCosmeticItems.isEmpty()
+         && accessoriesRenderOptions.isEmpty();
    }
 
    public RagdollEquipmentSnapshot filteredByAvailableItems(List<ItemStack> availableItems) {
@@ -60,8 +98,10 @@ public record RagdollEquipmentSnapshot(
       }
 
       Map<String, List<ItemStack>> curios = filterSlotMapLoose(curioItems, available);
+      Map<String, List<ItemStack>> curioCosmetics = filterSlotMapLoose(curioCosmeticItems, available);
       Map<String, List<ItemStack>> accessories = filterSlotMapLoose(accessoriesItems, available);
-      return new RagdollEquipmentSnapshot(vanilla, curios, accessories);
+      Map<String, List<ItemStack>> accessoryCosmetics = filterSlotMapLoose(accessoriesCosmeticItems, available);
+      return new RagdollEquipmentSnapshot(vanilla, curios, curioCosmetics, curioRenderOptions, accessories, accessoryCosmetics, accessoriesRenderOptions);
    }
 
    private static Map<EquipmentSlot, ItemStack> copyVanilla(Map<EquipmentSlot, ItemStack> source) {
@@ -80,6 +120,18 @@ public record RagdollEquipmentSnapshot(
          source.forEach((slot, stacks) -> {
             if (slot != null && stacks != null) {
                copy.put(slot, stacks.stream().map(ItemStack::copy).toList());
+            }
+         });
+      }
+      return Map.copyOf(copy);
+   }
+
+   private static Map<String, List<Boolean>> copyBooleanSlotMap(Map<String, List<Boolean>> source) {
+      Map<String, List<Boolean>> copy = new LinkedHashMap<>();
+      if (source != null) {
+         source.forEach((slot, values) -> {
+            if (slot != null && values != null) {
+               copy.put(slot, List.copyOf(values));
             }
          });
       }

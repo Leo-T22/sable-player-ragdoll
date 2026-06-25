@@ -330,6 +330,11 @@ public final class RagdollRegistry {
       }
    }
 
+   public static void setCorpse(ServerLevel level, UUID rootId, boolean corpse) {
+      RagdollEquipmentHelper.applyToAllParts(level, rootId, part -> part.setCorpse(corpse));
+      RagdollEquipmentHelper.sendPartUpdates(level, rootId);
+   }
+
    public static boolean isGrabDisabledAt(ServerLevel level, BlockPos pos) {
       SubLevel part = Sable.HELPER.getContaining(level, pos);
       return part instanceof ServerSubLevel ssl && RagdollSessionManager.isGrabDisabled(ssl);

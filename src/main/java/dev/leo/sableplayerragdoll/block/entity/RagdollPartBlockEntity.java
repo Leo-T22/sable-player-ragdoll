@@ -66,8 +66,13 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    private ItemStack legsItem = ItemStack.EMPTY;
    private ItemStack feetItem = ItemStack.EMPTY;
    private float maxHealth = 20f;
+   private boolean corpse;
    private Map<String, List<ItemStack>> curiosItems = new LinkedHashMap<>();
+   private Map<String, List<ItemStack>> curiosCosmeticItems = new LinkedHashMap<>();
+   private Map<String, List<Boolean>> curiosRenderOptions = new LinkedHashMap<>();
    private Map<String, List<ItemStack>> accessoriesItems = new LinkedHashMap<>();
+   private Map<String, List<ItemStack>> accessoriesCosmeticItems = new LinkedHashMap<>();
+   private Map<String, List<Boolean>> accessoriesRenderOptions = new LinkedHashMap<>();
    private final Map<UUID, GrabConstraint> grabbers = new HashMap<>();
 
    public RagdollPartBlockEntity(BlockPos pos, BlockState state) {
@@ -102,6 +107,17 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    public float maxHealth() {
       return this.maxHealth;
+   }
+
+   public boolean isCorpse() {
+      return this.corpse;
+   }
+
+   public void setCorpse(boolean corpse) {
+      if (this.corpse != corpse) {
+         this.corpse = corpse;
+         this.setChanged();
+      }
    }
 
    public void startGrab(UUID playerId) {
@@ -235,8 +251,34 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       return Collections.unmodifiableMap(this.curiosItems);
    }
 
+   public void setCurioCosmeticItems(String slotId, List<ItemStack> stacks) {
+      if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
+         this.curiosCosmeticItems.remove(slotId);
+      } else {
+         this.curiosCosmeticItems.put(slotId, Collections.unmodifiableList(new ArrayList<>(stacks)));
+      }
+      this.setChanged();
+   }
+
+   public Map<String, List<ItemStack>> getCurioCosmeticItems() {
+      return Collections.unmodifiableMap(this.curiosCosmeticItems);
+   }
+
+   public void setCurioRenderOptions(String slotId, List<Boolean> options) {
+      if (options == null || options.isEmpty()) {
+         this.curiosRenderOptions.remove(slotId);
+      } else {
+         this.curiosRenderOptions.put(slotId, List.copyOf(options));
+      }
+      this.setChanged();
+   }
+
+   public Map<String, List<Boolean>> getCurioRenderOptions() {
+      return Collections.unmodifiableMap(this.curiosRenderOptions);
+   }
+
    public boolean hasCurioItems() {
-      return !this.curiosItems.isEmpty();
+      return !this.curiosItems.isEmpty() || !this.curiosCosmeticItems.isEmpty() || !this.curiosRenderOptions.isEmpty();
    }
 
    public void setAccessoriesItems(String slotName, List<ItemStack> stacks) {
@@ -248,12 +290,38 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       this.setChanged();
    }
 
+   public void setAccessoriesCosmeticItems(String slotName, List<ItemStack> stacks) {
+      if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
+         this.accessoriesCosmeticItems.remove(slotName);
+      } else {
+         this.accessoriesCosmeticItems.put(slotName, Collections.unmodifiableList(new ArrayList<>(stacks)));
+      }
+      this.setChanged();
+   }
+
+   public void setAccessoriesRenderOptions(String slotName, List<Boolean> options) {
+      if (options == null || options.isEmpty()) {
+         this.accessoriesRenderOptions.remove(slotName);
+      } else {
+         this.accessoriesRenderOptions.put(slotName, List.copyOf(options));
+      }
+      this.setChanged();
+   }
+
    public Map<String, List<ItemStack>> getAccessoriesItems() {
       return Collections.unmodifiableMap(this.accessoriesItems);
    }
 
+   public Map<String, List<ItemStack>> getAccessoriesCosmeticItems() {
+      return Collections.unmodifiableMap(this.accessoriesCosmeticItems);
+   }
+
+   public Map<String, List<Boolean>> getAccessoriesRenderOptions() {
+      return Collections.unmodifiableMap(this.accessoriesRenderOptions);
+   }
+
    public boolean hasAccessoriesItems() {
-      return !this.accessoriesItems.isEmpty();
+      return !this.accessoriesItems.isEmpty() || !this.accessoriesCosmeticItems.isEmpty() || !this.accessoriesRenderOptions.isEmpty();
    }
 
    @Override
@@ -265,6 +333,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       }
 
       tag.putFloat("MaxHealth", this.maxHealth);
+      tag.putBoolean("Corpse", this.corpse);
       tag.putString("SkinName", this.skinName);
       tag.putString("SkinTextures", this.skinTextures);
       tag.putString("SkinTexturesSignature", this.skinTexturesSignature);
@@ -275,7 +344,11 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       saveItem(tag, registries, "LegsItem", this.legsItem);
       saveItem(tag, registries, "FeetItem", this.feetItem);
       if (!this.curiosItems.isEmpty()) tag.put("CurioItems", saveSlotMap(this.curiosItems, registries));
+      if (!this.curiosCosmeticItems.isEmpty()) tag.put("CurioCosmeticItems", saveSlotMap(this.curiosCosmeticItems, registries));
+      if (!this.curiosRenderOptions.isEmpty()) tag.put("CurioRenderOptions", saveBooleanSlotMap(this.curiosRenderOptions));
       if (!this.accessoriesItems.isEmpty()) tag.put("AccessoriesItems", saveSlotMap(this.accessoriesItems, registries));
+      if (!this.accessoriesCosmeticItems.isEmpty()) tag.put("AccessoriesCosmeticItems", saveSlotMap(this.accessoriesCosmeticItems, registries));
+      if (!this.accessoriesRenderOptions.isEmpty()) tag.put("AccessoriesRenderOptions", saveBooleanSlotMap(this.accessoriesRenderOptions));
    }
 
    @Override
@@ -283,6 +356,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       super.loadAdditional(tag, registries);
       this.bodyPart = BodyPart.byName(tag.getString("BodyPart"));
       this.maxHealth = tag.contains("MaxHealth") ? tag.getFloat("MaxHealth") : 20f;
+      this.corpse = tag.getBoolean("Corpse");
       this.skinUuid = tag.hasUUID("SkinUuid") ? tag.getUUID("SkinUuid") : null;
       this.skinName = tag.getString("SkinName").isBlank() ? "Player" : tag.getString("SkinName");
       this.skinTextures = tag.getString("SkinTextures");
@@ -294,7 +368,11 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       this.legsItem = loadItem(tag, registries, "LegsItem");
       this.feetItem = loadItem(tag, registries, "FeetItem");
       loadSlotMap(tag, registries, "CurioItems", this.curiosItems);
+      loadSlotMap(tag, registries, "CurioCosmeticItems", this.curiosCosmeticItems);
+      loadBooleanSlotMap(tag, "CurioRenderOptions", this.curiosRenderOptions);
       loadSlotMap(tag, registries, "AccessoriesItems", this.accessoriesItems);
+      loadSlotMap(tag, registries, "AccessoriesCosmeticItems", this.accessoriesCosmeticItems);
+      loadBooleanSlotMap(tag, "AccessoriesRenderOptions", this.accessoriesRenderOptions);
    }
 
    @Override
@@ -356,6 +434,39 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
             }
          }
          if (hasItem) out.put(slotId, stacks);
+      }
+   }
+
+   private static ListTag saveBooleanSlotMap(Map<String, List<Boolean>> slotMap) {
+      ListTag list = new ListTag();
+      slotMap.forEach((slotId, options) -> {
+         CompoundTag slotTag = new CompoundTag();
+         slotTag.putString("SlotId", slotId);
+         ListTag optionList = new ListTag();
+         for (Boolean option : options) {
+            CompoundTag optionTag = new CompoundTag();
+            optionTag.putBoolean("Render", Boolean.TRUE.equals(option));
+            optionList.add(optionTag);
+         }
+         slotTag.put("Options", optionList);
+         list.add(slotTag);
+      });
+      return list;
+   }
+
+   private static void loadBooleanSlotMap(CompoundTag tag, String key, Map<String, List<Boolean>> out) {
+      out.clear();
+      if (!tag.contains(key, Tag.TAG_LIST)) return;
+      ListTag list = tag.getList(key, Tag.TAG_COMPOUND);
+      for (int i = 0; i < list.size(); i++) {
+         CompoundTag slotTag = list.getCompound(i);
+         String slotId = slotTag.getString("SlotId");
+         ListTag optionList = slotTag.getList("Options", Tag.TAG_COMPOUND);
+         List<Boolean> options = new ArrayList<>(optionList.size());
+         for (int j = 0; j < optionList.size(); j++) {
+            options.add(optionList.getCompound(j).getBoolean("Render"));
+         }
+         if (!slotId.isBlank()) out.put(slotId, List.copyOf(options));
       }
    }
 

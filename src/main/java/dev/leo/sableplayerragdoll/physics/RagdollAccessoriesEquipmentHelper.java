@@ -18,57 +18,82 @@ final class RagdollAccessoriesEquipmentHelper {
    }
 
    static void applyToPart(RagdollPartBlockEntity part, Player player) {
-      capture(player, true).forEach(part::setAccessoriesItems);
+      AccessorySnapshot snapshot = captureSnapshot(player, true);
+      snapshot.items().forEach(part::setAccessoriesItems);
+      snapshot.cosmeticItems().forEach(part::setAccessoriesCosmeticItems);
+      snapshot.renderOptions().forEach(part::setAccessoriesRenderOptions);
    }
 
    static void applyFrom(ServerLevel level, UUID rootId, Player player) {
-      Map<String, List<ItemStack>> items = capture(player, true);
-      RagdollEquipmentHelper.applyToAllParts(level, rootId, be -> items.forEach(be::setAccessoriesItems));
+      AccessorySnapshot snapshot = captureSnapshot(player, true);
+      RagdollEquipmentHelper.applyToAllParts(level, rootId, be -> {
+         snapshot.items().forEach(be::setAccessoriesItems);
+         snapshot.cosmeticItems().forEach(be::setAccessoriesCosmeticItems);
+         snapshot.renderOptions().forEach(be::setAccessoriesRenderOptions);
+      });
    }
 
    static Map<String, List<ItemStack>> capture(Player player) {
-      return capture(player, false);
+      return captureSnapshot(player, false).items();
    }
 
-   private static Map<String, List<ItemStack>> capture(Player player, boolean includeEmptySlots) {
+   static AccessorySnapshot captureSnapshot(Player player) {
+      return captureSnapshot(player, false);
+   }
+
+   private static AccessorySnapshot captureSnapshot(Player player, boolean includeEmptySlots) {
       AccessoriesCapability cap = AccessoriesCapability.get(player);
-      if (cap == null) return Map.of();
+      if (cap == null) return AccessorySnapshot.empty();
 
       Map<String, List<ItemStack>> accessoriesItems = new LinkedHashMap<>();
+      Map<String, List<ItemStack>> accessoriesCosmeticItems = new LinkedHashMap<>();
+      Map<String, List<Boolean>> accessoriesRenderOptions = new LinkedHashMap<>();
       for (Map.Entry<String, ? extends AccessoriesContainer> entry : cap.getContainers().entrySet()) {
          String slotName = entry.getKey();
          AccessoriesContainer container = entry.getValue();
-         List<ItemStack> items = effectiveItems(slotName, container);
-         if (includeEmptySlots || items.stream().anyMatch(stack -> !stack.isEmpty())) {
+         List<ItemStack> items = items(container.getAccessories(), container.getSize());
+         List<ItemStack> cosmeticItems = items(container.getCosmeticAccessories(), container.getSize());
+         List<Boolean> renderOptions = renderOptions(container);
+         if (includeEmptySlots || hasAnyStack(items) || hasAnyStack(cosmeticItems)) {
             accessoriesItems.put(slotName, items);
+            accessoriesCosmeticItems.put(slotName, cosmeticItems);
+            accessoriesRenderOptions.put(slotName, renderOptions);
          }
       }
-      return accessoriesItems;
+      return new AccessorySnapshot(accessoriesItems, accessoriesCosmeticItems, accessoriesRenderOptions);
    }
 
-   private static List<ItemStack> effectiveItems(String slotName, AccessoriesContainer container) {
-      if (ArmorSlotTypes.isArmorType(slotName)) {
-         return List.of(container.getCosmeticAccessories().getItem(0).copy());
-      }
-
-      List<ItemStack> items = new ArrayList<>(container.getSize());
-      for (int i = 0; i < container.getSize(); i++) {
-         ItemStack actual = container.getAccessories().getItem(i);
-         ItemStack cosmetic = container.getCosmeticAccessories().getItem(i);
-         ItemStack effective = !cosmetic.isEmpty() ? cosmetic : actual;
-         items.add(effective.copy());
+   private static List<ItemStack> items(net.minecraft.world.Container container, int size) {
+      List<ItemStack> items = new ArrayList<>(size);
+      for (int i = 0; i < size; i++) {
+         items.add(container.getItem(i).copy());
       }
       return items;
    }
 
+   private static List<Boolean> renderOptions(AccessoriesContainer container) {
+      List<Boolean> options = new ArrayList<>(container.getSize());
+      for (int i = 0; i < container.getSize(); i++) {
+         options.add(container.shouldRender(i));
+      }
+      return options;
+   }
+
+   private static boolean hasAnyStack(List<ItemStack> items) {
+      return items.stream().anyMatch(stack -> !stack.isEmpty());
+   }
+
    static long accessoriesSignature(Player player) {
       long hash = 1L;
-      for (Map.Entry<String, List<ItemStack>> entry : capture(player, true).entrySet()) {
+      AccessorySnapshot snapshot = captureSnapshot(player, true);
+      for (Map.Entry<String, List<ItemStack>> entry : snapshot.items().entrySet()) {
          hash = 31L * hash + entry.getKey().hashCode();
          List<ItemStack> items = entry.getValue();
          for (int i = 0; i < items.size(); i++) {
             hash = 31L * hash + i;
             hash = 31L * hash + stackSignature(items.get(i));
+            hash = 31L * hash + stackSignature(snapshot.cosmeticItems().getOrDefault(entry.getKey(), List.of()).size() > i ? snapshot.cosmeticItems().get(entry.getKey()).get(i) : ItemStack.EMPTY);
+            hash = 31L * hash + Boolean.hashCode(snapshot.renderOptions().getOrDefault(entry.getKey(), List.of()).size() > i && snapshot.renderOptions().get(entry.getKey()).get(i));
          }
       }
       return hash;
@@ -80,5 +105,11 @@ final class RagdollAccessoriesEquipmentHelper {
       hash = 31L * hash + stack.getCount();
       hash = 31L * hash + stack.getComponents().hashCode();
       return hash;
+   }
+
+   record AccessorySnapshot(Map<String, List<ItemStack>> items, Map<String, List<ItemStack>> cosmeticItems, Map<String, List<Boolean>> renderOptions) {
+      static AccessorySnapshot empty() {
+         return new AccessorySnapshot(Map.of(), Map.of(), Map.of());
+      }
    }
 }

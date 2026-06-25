@@ -43,6 +43,11 @@ public final class RagdollPartServerDataProvider implements IServerDataProvider<
         }
         data.putString("BodyPart", ragdoll.bodyPart().getSerializedName());
 
+        if (ragdoll.isCorpse()) {
+            data.putBoolean("Corpse", true);
+            return;
+        }
+
         if (accessor.getLevel() instanceof ServerLevel serverLevel) {
             final ServerPlayer player = serverLevel.getServer().getPlayerList().getPlayer(ragdoll.skinProfile().getId());
             if (player != null) {

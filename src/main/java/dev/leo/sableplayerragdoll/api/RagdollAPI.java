@@ -173,6 +173,10 @@ public final class RagdollAPI {
       RagdollRegistry.setGrabDisabled(level, subLevelId, disabled);
    }
 
+   public static void setCorpse(ServerLevel level, UUID rootId, boolean corpse) {
+      RagdollRegistry.setCorpse(level, rootId, corpse);
+   }
+
    @Nullable
    public static UUID torsoSubLevelId(UUID rootId) {
       return rootId;

@@ -108,7 +108,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
    @SuppressWarnings({"unchecked", "rawtypes"})
    private void renderLayers(RagdollPartBlockEntity blockEntity, BodyPart bodyPart, LivingEntity entity, PoseStack poseStack, MultiBufferSource buffer, int packedLight, float partialTick) {
       // Render the base model — use hurt overlay when the real player is in their hurt window
-      int baseOverlay = entity.hurtTime > 0
+      int baseOverlay = !blockEntity.isCorpse() && entity.hurtTime > 0
           ? OverlayTexture.pack(0, 3)  // u=0 (full flash), v=3 (red hurt row)
           : OverlayTexture.NO_OVERLAY;
       VertexConsumer vertices = buffer.getBuffer(RenderType.entityTranslucent(this.currentTexture));
@@ -192,12 +192,12 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       
       if (ModList.get().isLoaded("accessories")) {
          if (blockEntity.hasAccessoriesItems()) {
-            AccessoriesRenderHelper.renderFromStored(bodyPart, blockEntity.getAccessoriesItems(), entity, this, poseStack, buffer, packedLight, partialTick);
+            AccessoriesRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick);
          }
       }
       if (ModList.get().isLoaded("curios")) {
          if (blockEntity.hasCurioItems()) {
-            CuriosRenderHelper.renderFromStored(bodyPart, blockEntity.getCurioItems(), entity, this, poseStack, buffer, packedLight, partialTick);
+            CuriosRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick);
          }
       }
    }
@@ -221,7 +221,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
 
    private LivingEntity getRenderEntity(RagdollPartBlockEntity blockEntity) {
       Minecraft minecraft = Minecraft.getInstance();
-      if (minecraft.level != null) {
+      if (!blockEntity.isCorpse() && minecraft.level != null) {
          UUID uuid = blockEntity.skinProfile().getId();
          if (uuid != null) {
             Player player = minecraft.level.getPlayerByUUID(uuid);

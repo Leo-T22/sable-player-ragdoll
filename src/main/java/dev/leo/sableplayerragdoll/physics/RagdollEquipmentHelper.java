@@ -43,7 +43,11 @@ final class RagdollEquipmentHelper {
       RagdollEquipmentScope resolved = scope == null ? RagdollEquipmentScope.ALL : scope;
       Map<EquipmentSlot, ItemStack> vanillaItems = Map.of();
       Map<String, List<ItemStack>> curioItems = Map.of();
+      Map<String, List<ItemStack>> curioCosmeticItems = Map.of();
+      Map<String, List<Boolean>> curioRenderOptions = Map.of();
       Map<String, List<ItemStack>> accessoriesItems = Map.of();
+      Map<String, List<ItemStack>> accessoriesCosmeticItems = Map.of();
+      Map<String, List<Boolean>> accessoriesRenderOptions = Map.of();
 
       if (resolved == RagdollEquipmentScope.ALL || resolved == RagdollEquipmentScope.VANILLA) {
          EnumMap<EquipmentSlot, ItemStack> vanilla = new EnumMap<>(EquipmentSlot.class);
@@ -55,14 +59,20 @@ final class RagdollEquipmentHelper {
 
       if (resolved == RagdollEquipmentScope.ALL || resolved == RagdollEquipmentScope.OPTIONAL_MODS) {
          if (ModList.get().isLoaded("curios")) {
-            curioItems = RagdollCuriosEquipmentHelper.capture(player);
+            RagdollCuriosEquipmentHelper.CurioSnapshot curios = RagdollCuriosEquipmentHelper.captureSnapshot(player);
+            curioItems = curios.items();
+            curioCosmeticItems = curios.cosmeticItems();
+            curioRenderOptions = curios.renderOptions();
          }
          if (ModList.get().isLoaded("accessories")) {
-            accessoriesItems = RagdollAccessoriesEquipmentHelper.capture(player);
+            RagdollAccessoriesEquipmentHelper.AccessorySnapshot accessories = RagdollAccessoriesEquipmentHelper.captureSnapshot(player);
+            accessoriesItems = accessories.items();
+            accessoriesCosmeticItems = accessories.cosmeticItems();
+            accessoriesRenderOptions = accessories.renderOptions();
          }
       }
 
-      return new RagdollEquipmentSnapshot(vanillaItems, curioItems, accessoriesItems);
+      return new RagdollEquipmentSnapshot(vanillaItems, curioItems, curioCosmeticItems, curioRenderOptions, accessoriesItems, accessoriesCosmeticItems, accessoriesRenderOptions);
    }
 
    static void applySnapshot(ServerLevel level, UUID rootId, RagdollEquipmentSnapshot snapshot) {
@@ -71,7 +81,11 @@ final class RagdollEquipmentHelper {
       applyToAllParts(level, rootId, be -> {
          snapshot.vanillaItems().forEach(be::setItemForSlot);
          snapshot.curioItems().forEach(be::setCurioItems);
+         snapshot.curioCosmeticItems().forEach(be::setCurioCosmeticItems);
+         snapshot.curioRenderOptions().forEach(be::setCurioRenderOptions);
          snapshot.accessoriesItems().forEach(be::setAccessoriesItems);
+         snapshot.accessoriesCosmeticItems().forEach(be::setAccessoriesCosmeticItems);
+         snapshot.accessoriesRenderOptions().forEach(be::setAccessoriesRenderOptions);
       });
       sendPartUpdates(level, rootId);
    }
@@ -94,7 +108,7 @@ final class RagdollEquipmentHelper {
       }
    }
 
-   private static void sendPartUpdates(ServerLevel level, UUID rootId) {
+   static void sendPartUpdates(ServerLevel level, UUID rootId) {
       var container = SubLevelContainer.getContainer(level);
       for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
          SubLevel subLevel = container.getSubLevel(partId);
