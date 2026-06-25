@@ -13,6 +13,7 @@ import dev.leo.sableplayerragdoll.api.RagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.api.RagdollLimbOptions;
 import dev.leo.sableplayerragdoll.api.RagdollPoseSnapshot;
 import dev.leo.sableplayerragdoll.physics.SableConstraintCompat;
+import dev.leo.sableplayerragdoll.physics.SubLevelEntityDetachHelper;
 import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintConfiguration;
@@ -30,6 +31,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -260,6 +262,14 @@ public final class MobRagdollAssembly {
 
     public static boolean isConverted(UUID uuid) {
         return CONVERTED_ENTITIES.contains(uuid);
+    }
+
+    public static boolean isActiveOrSavedRagdollSource(ServerLevel level, UUID uuid) {
+        return CONVERTED_ENTITIES.contains(uuid) || MobRagdollSavedData.get(level).getEntry(uuid) != null;
+    }
+
+    public static boolean hasPendingLaunch(UUID uuid) {
+        return PENDING_LAUNCHES.containsKey(uuid);
     }
 
     public static boolean isRagdollPart(UUID subLevelId) {
@@ -820,7 +830,11 @@ public final class MobRagdollAssembly {
         }
         SubLevel current = container.getSubLevel(subLevel.getUniqueId());
         if (current instanceof ServerSubLevel currentServerSubLevel && !currentServerSubLevel.isRemoved()) {
+            Collection<Entity> detached = SubLevelEntityDetachHelper.detachTrackingEntities(
+                    currentServerSubLevel,
+                    entity -> MobRagdollAssembly.isActiveOrSavedRagdollSource(currentServerSubLevel.getLevel(), entity.getUUID()));
             container.removeSubLevel(currentServerSubLevel, SubLevelRemovalReason.REMOVED);
+            SubLevelEntityDetachHelper.syncDetachedEntities(detached);
         }
     }
 

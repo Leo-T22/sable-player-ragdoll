@@ -171,6 +171,9 @@ public record MobRagdollSpawnPacket(int entityId, String entityType, float bodyY
             if (!(target instanceof LivingEntity livingEntity) || target == player) {
                 return;
             }
+            if (!MobRagdollAssembly.hasPendingLaunch(livingEntity.getUUID())) {
+                return;
+            }
 
             List<MobRagdollAssembly.PartSpawn> spawns = packet.parts().stream()
                     .map(part -> new MobRagdollAssembly.PartSpawn(
@@ -214,21 +217,7 @@ public record MobRagdollSpawnPacket(int entityId, String entityType, float bodyY
                     .toList();
 
             MobRagdollAssembly.setClientBodyYaw(livingEntity.getUUID(), packet.bodyYaw());
-
-            if (MobRagdollAssembly.consumePendingLaunch(player.serverLevel(), livingEntity, spawns)) {
-                return;
-            }
-
-            if (livingEntity.distanceToSqr(player) > 64.0) {
-                return;
-            }
-            if (MobRagdollAssembly.isConverted(livingEntity.getUUID())) {
-                MobRagdollAssembly.despawn(player.serverLevel(), livingEntity);
-                return;
-            }
-            MobRagdollAssembly.spawn(player.serverLevel(), livingEntity, spawns,
-                    player.getLookAngle().scale(6.0),
-                    new net.minecraft.world.phys.Vec3(0.0, player.getLookAngle().y() > 0 ? 4.0 : -4.0, 0.0));
+            MobRagdollAssembly.consumePendingLaunch(player.serverLevel(), livingEntity, spawns);
         });
     }
 

@@ -7,7 +7,6 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
-import net.minecraft.world.entity.Mob;
 import net.minecraft.world.phys.Vec3;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -59,7 +58,6 @@ public abstract class LivingEntityRagdollDamageMixin {
         if (entity instanceof ServerPlayer serverPlayer && RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer)) {
             return true;
         }
-        if (MobRagdollAssembly.isConverted(entity.getUUID())) return true;
-        return entity instanceof Mob mob && mob.isInvisible() && mob.isNoAi();
+        return MobRagdollAssembly.isConverted(entity.getUUID());
     }
 }

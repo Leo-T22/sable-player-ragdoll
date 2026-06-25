@@ -7,6 +7,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.player.Player;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -20,7 +21,7 @@ public abstract class PlayerRagdollHiddenMixin {
         LivingEntity self = (LivingEntity) (Object) this;
         if (self.level().isClientSide()) {
             // Client can't check session state; infer from the invisible+seated condition
-            return self.isInvisible() && self.getVehicle() instanceof RagdollSeatEntity;
+            return self instanceof Player && self.isInvisible() && self.getVehicle() instanceof RagdollSeatEntity;
         }
         if (!(self instanceof ServerPlayer serverPlayer)) return false;
         return RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer);

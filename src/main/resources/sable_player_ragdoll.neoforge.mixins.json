@@ -9,7 +9,6 @@
     "PlayerRagdollHiddenMixin",
     "PhysicsBlockPropertyHelperMixin",
     "LivingEntityRagdollDamageMixin",
-    "LivingEntityRagdollInvisibilityMixin",
     "ActiveSableCompanionBodyGuardMixin"
   ],
   "client": [
