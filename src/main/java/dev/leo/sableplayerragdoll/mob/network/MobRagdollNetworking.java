@@ -9,7 +9,7 @@ public final class MobRagdollNetworking {
     }
 
     public static void register(RegisterPayloadHandlersEvent event) {
-        PayloadRegistrar registrar = event.registrar(SablePlayerRagdoll.MOD_ID);
+        PayloadRegistrar registrar = event.registrar(SablePlayerRagdoll.MOD_ID).optional();
         registrar.playToServer(MobRagdollSpawnPacket.TYPE, MobRagdollSpawnPacket.STREAM_CODEC, MobRagdollSpawnPacket::handle);
         registrar.playToServer(MobRagdollDespawnPacket.TYPE, MobRagdollDespawnPacket.STREAM_CODEC, MobRagdollDespawnPacket::handle);
         registrar.playToClient(MobRagdollLaunchRequestPacket.TYPE, MobRagdollLaunchRequestPacket.STREAM_CODEC, MobRagdollLaunchRequestPacket::handle);

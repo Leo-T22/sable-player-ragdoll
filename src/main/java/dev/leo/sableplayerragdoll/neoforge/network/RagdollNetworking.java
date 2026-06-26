@@ -18,7 +18,7 @@ public final class RagdollNetworking {
    }
 
    public static void register(RegisterPayloadHandlersEvent event) {
-      PayloadRegistrar registrar = event.registrar("sable_player_ragdoll");
+      PayloadRegistrar registrar = event.registrar("sable_player_ragdoll").optional();
       registrar.playToClient(RagdollGrabSyncPacket.TYPE, RagdollGrabSyncPacket.STREAM_CODEC, RagdollGrabSyncPacket::handle);
       registrar.playToClient(RagdollRequestPosePacket.TYPE, RagdollRequestPosePacket.STREAM_CODEC, RagdollRequestPosePacket::handle);
       registrar.playToServer(RagdollTriggerPacket.TYPE, RagdollTriggerPacket.STREAM_CODEC, RagdollTriggerPacket::handle);
