@@ -110,7 +110,7 @@ public final class MobRagdollAssembly {
         if (parts.isEmpty()) {
             return;
         }
-        if (!MobRagdollWhitelist.isAllowed(entity.getType())) {
+        if (!MobRagdollWhitelist.isAllowed(level, entity.getType())) {
             return;
         }
         if (!CONVERTED_ENTITIES.add(entity.getUUID())) {
@@ -160,7 +160,7 @@ public final class MobRagdollAssembly {
         if (entity.isRemoved() || CONVERTED_ENTITIES.contains(uuid) || PENDING_LAUNCHES.containsKey(uuid)) {
             return false;
         }
-        if (!MobRagdollWhitelist.isAllowed(entity.getType())) {
+        if (!MobRagdollWhitelist.isAllowed(level, entity.getType())) {
             return false;
         }
         MobRagdollStartEvent startEvent = new MobRagdollStartEvent(entity, linear);

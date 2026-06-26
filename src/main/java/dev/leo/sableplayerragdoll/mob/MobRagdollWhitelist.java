@@ -12,6 +12,7 @@ import java.util.HashSet;
 import java.util.Set;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
 
 public final class MobRagdollWhitelist {
@@ -22,18 +23,35 @@ public final class MobRagdollWhitelist {
    }
 
    public static boolean isAllowed(EntityType<?> type) {
-      if (type == null) {
-         return false;
-      }
-      Data d = data();
-      if (d.allowAll()) {
-         return true;
-      }
-      ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+      ResourceLocation id = entityId(type);
+      return id != null && isWhitelisted(id);
+   }
+
+   public static boolean isAllowed(ServerLevel level, EntityType<?> type) {
+      ResourceLocation id = entityId(type);
       if (id == null) {
          return false;
       }
-      return d.entities().contains(id.toString()) || d.namespaces().contains(id.getNamespace());
+      if (level != null && MobRagdollBlacklistSavedData.get(level).isBlacklisted(id)) {
+         return false;
+      }
+      return isWhitelisted(id);
+   }
+
+   private static boolean isWhitelisted(ResourceLocation id) {
+      Data d = data();
+      return d.allowAll() || d.entities().contains(id.toString()) || d.namespaces().contains(id.getNamespace());
+   }
+
+   private static ResourceLocation entityId(EntityType<?> type) {
+      if (type == null) {
+         return null;
+      }
+      ResourceLocation id = BuiltInRegistries.ENTITY_TYPE.getKey(type);
+      if (id == null) {
+         return null;
+      }
+      return id;
    }
 
    private static Data data() {

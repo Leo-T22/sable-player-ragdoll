@@ -3,8 +3,11 @@ package dev.leo.sableplayerragdoll.neoforge;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.arguments.DoubleArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
+import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
+import com.mojang.brigadier.suggestion.Suggestions;
+import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.RagdollItemTags;
@@ -24,6 +27,7 @@ import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntities;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.MobRagdollBlacklistSavedData;
 import dev.leo.sableplayerragdoll.mob.api.MobRagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.mob.MobRagdollBlocks;
 import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
@@ -46,11 +50,15 @@ import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
+import net.minecraft.commands.SharedSuggestionProvider;
 import net.minecraft.commands.arguments.EntityArgument;
 import net.minecraft.commands.arguments.GameProfileArgument;
+import net.minecraft.commands.arguments.ResourceLocationArgument;
 import net.minecraft.commands.arguments.coordinates.Vec3Argument;
 import net.minecraft.core.component.DataComponents;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -103,6 +111,7 @@ import net.neoforged.neoforge.event.tick.LevelTickEvent.Post;
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 
 @Mod("sable_player_ragdoll")
@@ -595,8 +604,130 @@ public final class SablePlayerRagdollNeoForge {
                      .executes(context -> stopWailing(context.getSource(), EntityArgument.getPlayers(context, "targets"))))
                )
             )
+            .then(Commands.literal("mob_blacklist")
+               .then(Commands.literal("list")
+                  .executes(context -> listMobRagdollBlacklist(context.getSource())))
+               .then(Commands.literal("clear")
+                  .executes(context -> clearMobRagdollBlacklist(context.getSource())))
+               .then(Commands.literal("add")
+                  .then(Commands.literal("entity")
+                     .then(Commands.argument("entity", ResourceLocationArgument.id())
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(BuiltInRegistries.ENTITY_TYPE.keySet(), builder))
+                        .executes(context -> addMobRagdollBlacklistEntity(
+                           context.getSource(),
+                           ResourceLocationArgument.getId(context, "entity")
+                        ))))
+                  .then(Commands.literal("mod")
+                     .then(Commands.argument("namespace", StringArgumentType.word())
+                        .suggests(SablePlayerRagdollNeoForge::suggestEntityNamespaces)
+                        .executes(context -> addMobRagdollBlacklistNamespace(
+                           context.getSource(),
+                           StringArgumentType.getString(context, "namespace")
+                        )))))
+               .then(Commands.literal("remove")
+                  .then(Commands.literal("entity")
+                     .then(Commands.argument("entity", ResourceLocationArgument.id())
+                        .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(BuiltInRegistries.ENTITY_TYPE.keySet(), builder))
+                        .executes(context -> removeMobRagdollBlacklistEntity(
+                           context.getSource(),
+                           ResourceLocationArgument.getId(context, "entity")
+                        ))))
+                  .then(Commands.literal("mod")
+                     .then(Commands.argument("namespace", StringArgumentType.word())
+                        .suggests(SablePlayerRagdollNeoForge::suggestEntityNamespaces)
+                        .executes(context -> removeMobRagdollBlacklistNamespace(
+                           context.getSource(),
+                           StringArgumentType.getString(context, "namespace")
+                        ))))))
             .then(Commands.literal("test_stick")
                .executes(context -> giveRagdollTestStick(context.getSource())))
+      );
+   }
+
+   private static int addMobRagdollBlacklistEntity(CommandSourceStack source, ResourceLocation entityId) {
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      if (!data.addEntity(entityId)) {
+         source.sendFailure(Component.literal(entityId + " is already in the mob ragdoll blacklist."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Blacklisted mob ragdoll entity " + entityId + "."), true);
+      return 1;
+   }
+
+   private static int removeMobRagdollBlacklistEntity(CommandSourceStack source, ResourceLocation entityId) {
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      if (!data.removeEntity(entityId)) {
+         source.sendFailure(Component.literal(entityId + " was not in the mob ragdoll blacklist."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Removed mob ragdoll entity blacklist entry " + entityId + "."), true);
+      return 1;
+   }
+
+   private static int addMobRagdollBlacklistNamespace(CommandSourceStack source, String namespace) {
+      String normalized = MobRagdollBlacklistSavedData.normalizeNamespace(namespace);
+      if (!MobRagdollBlacklistSavedData.isValidNamespace(normalized)) {
+         source.sendFailure(Component.literal(namespace + " is not a valid mod id namespace."));
+         return 0;
+      }
+
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      if (!data.addNamespace(normalized)) {
+         source.sendFailure(Component.literal(normalized + " is already in the mob ragdoll mod blacklist."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Blacklisted mob ragdolls from mod namespace " + normalized + "."), true);
+      return 1;
+   }
+
+   private static int removeMobRagdollBlacklistNamespace(CommandSourceStack source, String namespace) {
+      String normalized = MobRagdollBlacklistSavedData.normalizeNamespace(namespace);
+      if (!MobRagdollBlacklistSavedData.isValidNamespace(normalized)) {
+         source.sendFailure(Component.literal(namespace + " is not a valid mod id namespace."));
+         return 0;
+      }
+
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      if (!data.removeNamespace(normalized)) {
+         source.sendFailure(Component.literal(normalized + " was not in the mob ragdoll mod blacklist."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Removed mob ragdoll mod blacklist entry " + normalized + "."), true);
+      return 1;
+   }
+
+   private static int clearMobRagdollBlacklist(CommandSourceStack source) {
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      if (!data.clear()) {
+         source.sendFailure(Component.literal("The mob ragdoll blacklist is already empty."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Cleared the mob ragdoll blacklist."), true);
+      return 1;
+   }
+
+   private static int listMobRagdollBlacklist(CommandSourceStack source) {
+      MobRagdollBlacklistSavedData data = MobRagdollBlacklistSavedData.get(source.getLevel());
+      String entities = formatBlacklistEntries(data.entities());
+      String namespaces = formatBlacklistEntries(data.namespaces());
+      source.sendSuccess(() -> Component.literal("Mob ragdoll blacklist: entities " + entities + "; mods " + namespaces + "."), false);
+      return data.entities().size() + data.namespaces().size();
+   }
+
+   private static String formatBlacklistEntries(Collection<String> values) {
+      if (values.isEmpty()) {
+         return "none";
+      }
+      return String.join(", ", values.stream().sorted().toList());
+   }
+
+   private static CompletableFuture<Suggestions> suggestEntityNamespaces(CommandContext<CommandSourceStack> context, SuggestionsBuilder builder) {
+      return SharedSuggestionProvider.suggest(
+         BuiltInRegistries.ENTITY_TYPE.keySet().stream()
+            .map(ResourceLocation::getNamespace)
+            .distinct()
+            .sorted(),
+         builder
       );
    }
 
