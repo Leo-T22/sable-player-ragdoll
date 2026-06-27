@@ -227,6 +227,32 @@ public final class RagdollAssemblyHelper {
       return ROOT_BY_PART.get(partId);
    }
 
+   public static @Nullable BodyPart bodyPartOf(UUID subLevelId) {
+      return BODY_PART_BY_SUBLEVEL.get(subLevelId);
+   }
+
+   public static @Nullable UUID dismember(UUID rootId, BodyPart limb) {
+      if (limb == BodyPart.TORSO) return null;
+      UUID limbId = linkedPartsAsMap(rootId).get(limb);
+      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.get(rootId);
+      RagdollJoint joint = joints == null ? null : joints.remove(limb);
+      if (joint != null && joint.handle() != null) {
+         if (joint.handle().isValid()) joint.handle().remove();
+         ACTIVE_CONSTRAINTS.remove(joint.handle());
+      }
+      if (limbId != null) {
+         BODY_PART_BY_SUBLEVEL.remove(limbId);
+         ROOT_BY_PART.remove(limbId);
+         List<UUID> parts = DOLL_PARTS_BY_ROOT.get(rootId);
+         if (parts != null) {
+            List<UUID> remaining = new ArrayList<>(parts);
+            remaining.remove(limbId);
+            DOLL_PARTS_BY_ROOT.put(rootId, remaining);
+         }
+      }
+      return limbId;
+   }
+
    public static boolean isRagdollPart(UUID subLevelId) {
       return ROOT_BY_PART.containsKey(subLevelId);
    }

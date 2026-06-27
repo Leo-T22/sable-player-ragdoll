@@ -11,6 +11,7 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import com.mojang.authlib.yggdrasil.ProfileResult;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.RagdollItemTags;
+import dev.leo.sableplayerragdoll.DeletingStick;
 import dev.leo.sableplayerragdoll.RagdollGrabCallbacks;
 import dev.leo.sableplayerragdoll.RagdollPoseRequestCallbacks;
 import dev.leo.sableplayerragdoll.RagdollSeatCallbacks;
@@ -232,9 +233,13 @@ public final class SablePlayerRagdollNeoForge {
       if (event.getLevel().getBlockState(event.getPos()).getBlock() instanceof MobRagdollPartBlock) {
          event.setCanceled(true);
          if (event.getAction() == PlayerInteractEvent.LeftClickBlock.Action.START
-               && event.getLevel() instanceof ServerLevel mobLevel
-               && mobLevel.getBlockEntity(event.getPos()) instanceof MobRagdollPartBlockEntity mobPart) {
-            MobRagdollAssembly.attackPart(mobLevel, mobPart, event.getEntity());
+               && event.getLevel() instanceof ServerLevel mobLevel) {
+            if (event.getEntity() instanceof ServerPlayer attacker && DeletingStick.is(attacker.getMainHandItem())) {
+               SubLevel subLevel = Sable.HELPER.getContaining(mobLevel, event.getPos());
+               if (subLevel != null) DeletingStick.deleteMob(mobLevel, subLevel.getUniqueId(), attacker);
+            } else if (mobLevel.getBlockEntity(event.getPos()) instanceof MobRagdollPartBlockEntity mobPart) {
+               MobRagdollAssembly.attackPart(mobLevel, mobPart, event.getEntity());
+            }
          }
          return;
       }
@@ -245,8 +250,12 @@ public final class SablePlayerRagdollNeoForge {
                && event.getEntity() instanceof ServerPlayer attacker) {
             SubLevel subLevel = Sable.HELPER.getContaining(level, event.getPos());
             if (subLevel != null) {
-               UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
-               if (rootId != null) pipeAttack(level, rootId, attacker);
+               if (DeletingStick.is(attacker.getMainHandItem())) {
+                  DeletingStick.delete(level, subLevel.getUniqueId(), attacker);
+               } else {
+                  UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
+                  if (rootId != null) pipeAttack(level, rootId, attacker);
+               }
             }
          }
          return;
@@ -261,6 +270,15 @@ public final class SablePlayerRagdollNeoForge {
          return;
       }
       if (!(event.getLevel() instanceof ServerLevel level)) return;
+      if (event.getEntity() instanceof ServerPlayer mobClicker
+            && DeletingStick.is(mobClicker.getItemInHand(event.getHand()))
+            && level.getBlockState(event.getPos()).getBlock() instanceof MobRagdollPartBlock) {
+         SubLevel sub = Sable.HELPER.getContaining(level, event.getPos());
+         if (sub != null) DeletingStick.dismemberMob(level, sub.getUniqueId(), mobClicker);
+         event.setCancellationResult(InteractionResult.SUCCESS);
+         event.setCanceled(true);
+         return;
+      }
       BlockPos target = event.getPos().relative(event.getFace());
       boolean targetIsRagdoll = isInRagdollPlot(level, target);
       boolean posIsRagdoll = isInRagdollPlot(level, event.getPos());
@@ -271,6 +289,12 @@ public final class SablePlayerRagdollNeoForge {
          if (subLevel != null) {
             UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevel.getUniqueId());
             if (rootId != null) {
+               if (DeletingStick.is(player.getItemInHand(event.getHand()))) {
+                  DeletingStick.dismember(level, subLevel.getUniqueId(), player);
+                  event.setCancellationResult(InteractionResult.SUCCESS);
+                  event.setCanceled(true);
+                  return;
+               }
                RagdollInteractEvent interactEvent = new RagdollInteractEvent(player, rootId, subLevel.getUniqueId(), ragdollPos, level);
                if (NeoForge.EVENT_BUS.post(interactEvent).isCanceled()) {
                   event.setCancellationResult(InteractionResult.SUCCESS);
@@ -561,6 +585,20 @@ public final class SablePlayerRagdollNeoForge {
                   )
                )
             )
+            .then(Commands.literal("mobless")
+               .then(Commands.argument("entity", ResourceLocationArgument.id())
+                  .suggests((context, builder) -> SharedSuggestionProvider.suggestResource(BuiltInRegistries.ENTITY_TYPE.keySet(), builder))
+                  .executes(context -> spawnMoblessRagdoll(
+                     context.getSource(),
+                     ResourceLocationArgument.getId(context, "entity"),
+                     context.getSource().getPosition()
+                  ))
+                  .then(Commands.argument("pos", Vec3Argument.vec3())
+                     .executes(context -> spawnMoblessRagdoll(
+                        context.getSource(),
+                        ResourceLocationArgument.getId(context, "entity"),
+                        Vec3Argument.getVec3(context, "pos")
+                     )))))
             .then(Commands.literal("wailing")
                .then(Commands.literal("start")
                   .executes(context -> startWailing(context.getSource().getPlayerOrException(), 100, 15.0, 10))
@@ -639,8 +677,10 @@ public final class SablePlayerRagdollNeoForge {
                            context.getSource(),
                            StringArgumentType.getString(context, "namespace")
                         ))))))
-            .then(Commands.literal("test_stick")
-               .executes(context -> giveRagdollTestStick(context.getSource())))
+            .then(Commands.literal("ragdolling_stick")
+               .executes(context -> giveRagdollingStick(context.getSource())))
+            .then(Commands.literal("deleting_stick")
+               .executes(context -> giveDeletingStick(context.getSource())))
       );
    }
 
@@ -883,6 +923,22 @@ public final class SablePlayerRagdollNeoForge {
       return profile;
    }
 
+   private static int spawnMoblessRagdoll(CommandSourceStack source, ResourceLocation entityId, Vec3 pos) {
+      EntityType<?> type = BuiltInRegistries.ENTITY_TYPE.getOptional(entityId).orElse(null);
+      if (type == null) {
+         source.sendFailure(Component.literal("Unknown entity type: " + entityId));
+         return 0;
+      }
+      UUID id = RagdollAPI.spawnMobless(source.getLevel(), type, pos);
+      if (id == null) {
+         source.sendFailure(Component.literal("Could not ragdoll " + entityId + " (not a living entity, or not whitelisted)."));
+         return 0;
+      }
+      source.sendSuccess(() -> Component.literal("Spawning mobless ragdoll " + RagdollRegistry.shortId(id) + " from " + entityId
+         + " (needs a player nearby to capture the model)"), true);
+      return 1;
+   }
+
    private static int finishDummySpawn(CommandSourceStack source, PlayerlessRagdollSession session) {
       if (session == null) {
          source.sendFailure(Component.literal("Failed to spawn playerless ragdoll."));
@@ -894,16 +950,26 @@ public final class SablePlayerRagdollNeoForge {
       return 1;
    }
 
-   private static int giveRagdollTestStick(CommandSourceStack source) throws CommandSyntaxException {
+   private static int giveRagdollingStick(CommandSourceStack source) throws CommandSyntaxException {
       ServerPlayer player = source.getPlayerOrException();
       ItemStack stack = new ItemStack(Items.STICK);
       RagdollItemTags.markTestItem(stack);
-      stack.set(DataComponents.CUSTOM_NAME, Component.literal("Ragdoll Test Stick"));
+      stack.set(DataComponents.CUSTOM_NAME, Component.literal("Ragdolling Stick"));
 
       if (!player.getInventory().add(stack)) {
          player.drop(stack, false);
       }
-      source.sendSuccess(() -> Component.literal("Gave ragdoll test stick"), true);
+      source.sendSuccess(() -> Component.literal("Gave ragdolling stick"), true);
+      return 1;
+   }
+
+   private static int giveDeletingStick(CommandSourceStack source) throws CommandSyntaxException {
+      ServerPlayer player = source.getPlayerOrException();
+      ItemStack stack = DeletingStick.create();
+      if (!player.getInventory().add(stack)) {
+         player.drop(stack, false);
+      }
+      source.sendSuccess(() -> Component.literal("Gave deleting stick (left-click deletes, right-click dismembers)"), true);
       return 1;
    }
 

@@ -28,6 +28,7 @@ import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -71,6 +72,13 @@ public final class MobRagdollAssembly {
     private static final Map<UUID, Long> GRAB_PROTECTED_UNTIL = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> DEFERRED_RESTORE_AT = new ConcurrentHashMap<>();
     private static final Map<UUID, MobRagdollEndEvent.Reason> DEFERRED_RESTORE_REASON = new ConcurrentHashMap<>();
+    private static final Map<UUID, PhysicsConstraintHandle> JOINT_BY_CHILD = new ConcurrentHashMap<>();
+    private static final Map<UUID, PendingMobless> PENDING_MOBLESS = new ConcurrentHashMap<>();
+    private static final int MOBLESS_DETACH_TIMEOUT_TICKS = 60;
+    public static final int DEFAULT_MOBLESS_DURATION_TICKS = Integer.MAX_VALUE;
+
+    private record PendingMobless(ServerLevel level, long deadlineTick) {
+    }
 
     private MobRagdollAssembly() {
     }
@@ -94,6 +102,8 @@ public final class MobRagdollAssembly {
         GRAB_PROTECTED_UNTIL.clear();
         DEFERRED_RESTORE_AT.clear();
         DEFERRED_RESTORE_REASON.clear();
+        PENDING_MOBLESS.clear();
+        JOINT_BY_CHILD.clear();
     }
 
     public static void spawn(ServerLevel level, LivingEntity entity, List<PartSpawn> parts) {
@@ -184,6 +194,144 @@ public final class MobRagdollAssembly {
         return true;
     }
 
+    public static UUID spawnMobless(ServerLevel level, EntityType<?> type, Vec3 pos, Vec3 linear, int durationTicks) {
+        if (type == null || !(type.create(level) instanceof LivingEntity living)) {
+            return null;
+        }
+        living.moveTo(pos.x, pos.y, pos.z, living.getYRot(), living.getXRot());
+        if (living instanceof Mob mob) {
+            mob.setNoAi(true);
+        }
+        living.setSilent(true);
+        living.setInvulnerable(true);
+        if (!level.addFreshEntity(living)) {
+            return null;
+        }
+        int duration = durationTicks > 0 ? durationTicks : DEFAULT_MOBLESS_DURATION_TICKS;
+        if (!requestLaunch(level, living, linear, Vec3.ZERO, MobRagdollLaunchOptions.builder().durationTicks(duration).build())) {
+            living.discard();
+            return null;
+        }
+        PENDING_MOBLESS.put(living.getUUID(), new PendingMobless(level, level.getGameTime() + MOBLESS_DETACH_TIMEOUT_TICKS));
+        return living.getUUID();
+    }
+
+    private static void processPendingMobless(ServerLevel level, long now) {
+        if (PENDING_MOBLESS.isEmpty()) {
+            return;
+        }
+        for (Iterator<Map.Entry<UUID, PendingMobless>> it = PENDING_MOBLESS.entrySet().iterator(); it.hasNext();) {
+            Map.Entry<UUID, PendingMobless> e = it.next();
+            if (e.getValue().level() != level) {
+                continue;
+            }
+            UUID uuid = e.getKey();
+            if (CONVERTED_ENTITIES.contains(uuid) && MobRagdollSavedData.get(level).getEntry(uuid) != null) {
+                MobRagdollSavedData.get(level).markMobless(uuid);
+                if (level.getEntity(uuid) instanceof Entity ent) {
+                    ent.discard();
+                }
+                it.remove();
+            } else if (now >= e.getValue().deadlineTick()) {
+                PENDING_LAUNCHES.remove(uuid);
+                if (level.getEntity(uuid) instanceof Entity ent) {
+                    ent.discard();
+                }
+                it.remove();
+            }
+        }
+    }
+
+    private static boolean isMobless(ServerLevel level, UUID uuid) {
+        MobRagdollSavedData.Entry entry = MobRagdollSavedData.get(level).getEntry(uuid);
+        return entry != null && entry.mobless();
+    }
+
+    public static boolean removeBySubLevel(ServerLevel level, UUID subLevelId, boolean smokePuff) {
+        if (smokePuff) {
+            SubLevelContainer container = SubLevelContainer.getContainer(level);
+            if (container != null && container.getSubLevel(subLevelId) instanceof ServerSubLevel ssl) {
+                dev.leo.sableplayerragdoll.physics.RagdollRegistry.emitRemovalPuff(level, ssl);
+            }
+        }
+        UUID owner = ownerUuidForSubLevel(subLevelId);
+        if (owner == null && (RAGDOLL_STATES.containsKey(subLevelId) || MobRagdollSavedData.get(level).getEntry(subLevelId) != null)) {
+            owner = subLevelId;
+        }
+        if (owner != null) {
+            discardRagdoll(level, owner);
+            return true;
+        }
+        return removeLooseSubLevel(level, subLevelId);
+    }
+
+    public static UUID dismemberBySubLevel(ServerLevel level, UUID subLevelId) {
+        UUID owner = ownerUuidForSubLevel(subLevelId);
+        if (owner == null) {
+            return null;
+        }
+        RagdollState state = RAGDOLL_STATES.get(owner);
+        if (state == null) {
+            return null;
+        }
+        SpawnedPart target = findPart(state, subLevelId);
+        if (target == null || target == selectRoot(state.parts())) {
+            return null;
+        }
+        PhysicsConstraintHandle handle = JOINT_BY_CHILD.remove(subLevelId);
+        if (handle != null && handle.isValid()) {
+            handle.remove();
+        }
+        List<SpawnedPart> remaining = new ArrayList<>(state.parts());
+        remaining.remove(target);
+        RAGDOLL_STATES.put(owner, new RagdollState(List.copyOf(remaining), state.spawnedAtTick(), state.preRagdollPos(), state.durationTicks()));
+        MobRagdollSavedData.get(level).removePart(owner, subLevelId);
+        return subLevelId;
+    }
+
+    private static UUID ownerUuidForSubLevel(UUID subLevelId) {
+        for (var entry : RAGDOLL_STATES.entrySet()) {
+            if (findPart(entry.getValue(), subLevelId) != null) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
+    private static SpawnedPart findPart(RagdollState state, UUID subLevelId) {
+        for (SpawnedPart part : state.parts()) {
+            if (part.subLevel() != null && subLevelId.equals(part.subLevel().getUniqueId())) {
+                return part;
+            }
+        }
+        return null;
+    }
+
+    private static boolean removeLooseSubLevel(ServerLevel level, UUID subLevelId) {
+        SubLevelContainer container = SubLevelContainer.getContainer(level);
+        if (container == null || !(container.getSubLevel(subLevelId) instanceof ServerSubLevel subLevel) || subLevel.isRemoved()) {
+            return false;
+        }
+        BlockPos center = subLevel.getPlot().getCenterBlock();
+        if (!(subLevel.getLevel().getBlockState(center).getBlock() instanceof MobRagdollPartBlock)) {
+            return false;
+        }
+        JOINT_BY_CHILD.remove(subLevelId);
+        removeSubLevelIfPresent(container, subLevel);
+        return true;
+    }
+
+    private static void forgetJoints(RagdollState state) {
+        if (state == null) {
+            return;
+        }
+        for (SpawnedPart part : state.parts()) {
+            if (part.subLevel() != null) {
+                JOINT_BY_CHILD.remove(part.subLevel().getUniqueId());
+            }
+        }
+    }
+
     private static Vec3 rootVelocity(RagdollState state) {
         if (state.parts().isEmpty()) {
             return Vec3.ZERO;
@@ -229,6 +377,7 @@ public final class MobRagdollAssembly {
             return;
         }
         RagdollState state = RAGDOLL_STATES.remove(uuid);
+        forgetJoints(state);
         RESTORED_UUIDS.remove(uuid);
         RESTORED_HANDLES.remove(uuid);
         Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
@@ -584,6 +733,7 @@ public final class MobRagdollAssembly {
         long now = level.getGameTime();
         drainSpawnQueue(level);
         runDeferredRestores(level, now);
+        processPendingMobless(level, now);
         SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
         if (!PENDING_LAUNCHES.isEmpty()) {
             PENDING_LAUNCHES.values().removeIf(pending -> now - pending.requestedTick() > PENDING_LAUNCH_TIMEOUT_TICKS);
@@ -597,6 +747,12 @@ public final class MobRagdollAssembly {
             }
             Entity entity = level.getEntity(entry.getKey());
             if (!(entity instanceof LivingEntity livingEntity) || entity.isRemoved() || !livingEntity.isAlive()) {
+                if (isMobless(level, entry.getKey())) {
+                    if (now - state.spawnedAtTick() >= state.durationTicks()) {
+                        expired.add(entry.getKey());
+                    }
+                    continue;
+                }
                 deadSources.add(entry.getKey());
                 continue;
             }
@@ -745,6 +901,7 @@ public final class MobRagdollAssembly {
 
     private static void discardRagdoll(ServerLevel level, UUID uuid) {
         RagdollState state = RAGDOLL_STATES.remove(uuid);
+        forgetJoints(state);
         CONVERTED_ENTITIES.remove(uuid);
         RESTORED_UUIDS.remove(uuid);
         RESTORED_HANDLES.remove(uuid);
@@ -769,6 +926,10 @@ public final class MobRagdollAssembly {
                 }
             }
         }
+
+        if (level.getEntity(uuid) instanceof LivingEntity living && !living.isRemoved()) {
+            living.kill();
+        }
     }
 
     private static void expireSavedRagdoll(ServerLevel level, UUID uuid) {
@@ -778,6 +939,7 @@ public final class MobRagdollAssembly {
         MobRagdollSavedData savedData = MobRagdollSavedData.get(level);
         MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
         RagdollState state = RAGDOLL_STATES.remove(uuid);
+        forgetJoints(state);
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         CONVERTED_ENTITIES.remove(uuid);
         RESTORED_UUIDS.remove(uuid);
@@ -787,7 +949,7 @@ public final class MobRagdollAssembly {
         clearRestoreDeferral(uuid);
 
         LivingEntity target = level.getEntity(uuid) instanceof LivingEntity loaded ? loaded
-                : (saved == null ? null : recreateEntity(level, uuid, saved));
+                : (saved == null || saved.mobless() ? null : recreateEntity(level, uuid, saved));
         if (target != null) {
             Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
             NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(target, exitVelocity, MobRagdollEndEvent.Reason.EXPIRED));
@@ -1003,6 +1165,7 @@ public final class MobRagdollAssembly {
                 PhysicsConstraintHandle handle = SableConstraintCompat.addConstraint(physicsSystem.getPipeline(), parent.subLevel(), child.subLevel(), config);
                 handle.setContactsEnabled(false);
                 tuneAngularJoint(handle);
+                JOINT_BY_CHILD.put(child.subLevel().getUniqueId(), handle);
                 if (representative == null) {
                     representative = handle;
                 }

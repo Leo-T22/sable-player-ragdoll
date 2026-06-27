@@ -37,14 +37,48 @@ public class MobRagdollSavedData extends SavedData {
                 entityType,
                 entityData == null ? new CompoundTag() : entityData.copy(),
                 Map.copyOf(partInfos),
-                Map.copyOf(partIds)));
+                Map.copyOf(partIds),
+                false));
         setDirty();
+    }
+
+    public void markMobless(UUID entityId) {
+        Entry e = entries.get(entityId);
+        if (e != null && !e.mobless()) {
+            entries.put(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
+                    e.entityType(), e.entityData(), e.partInfos(), e.partIds(), true));
+            setDirty();
+        }
     }
 
     public void removeEntry(UUID entityId) {
         if (entries.remove(entityId) != null) {
             setDirty();
         }
+    }
+
+    public void removePart(UUID entityId, UUID partSubLevelId) {
+        Entry e = entries.get(entityId);
+        if (e == null) {
+            return;
+        }
+        String partName = null;
+        for (var pe : e.partIds().entrySet()) {
+            if (partSubLevelId.equals(pe.getValue())) {
+                partName = pe.getKey();
+                break;
+            }
+        }
+        if (partName == null) {
+            return;
+        }
+        Map<String, PartInfo> partInfos = new HashMap<>(e.partInfos());
+        Map<String, UUID> partIds = new HashMap<>(e.partIds());
+        partInfos.remove(partName);
+        partIds.remove(partName);
+        entries.put(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
+                e.entityType(), e.entityData(), Map.copyOf(partInfos), Map.copyOf(partIds), e.mobless()));
+        setDirty();
     }
 
     public Entry getEntry(UUID entityId) {
@@ -63,6 +97,7 @@ public class MobRagdollSavedData extends SavedData {
             entryTag.putUUID("EntityId", entry.getKey());
             entryTag.putLong("SpawnedAt", entry.getValue().spawnedAtTick);
             entryTag.putInt("DurationTicks", entry.getValue().durationTicks);
+            entryTag.putBoolean("Mobless", entry.getValue().mobless);
             entryTag.putString("EntityType", entry.getValue().entityType);
             entryTag.put("EntityData", entry.getValue().entityData.copy());
             CompoundTag posTag = new CompoundTag();
@@ -139,13 +174,14 @@ public class MobRagdollSavedData extends SavedData {
                     partIds.put(name, partTag.getUUID("SubLevelId"));
                 }
             }
-            data.entries.put(entityId, new Entry(spawnedAtTick, durationTicks, preRagdollPos, entityType, entityData, partInfos, partIds));
+            boolean mobless = entryTag.getBoolean("Mobless");
+            data.entries.put(entityId, new Entry(spawnedAtTick, durationTicks, preRagdollPos, entityType, entityData, partInfos, partIds, mobless));
         }
         return data;
     }
 
     public record Entry(long spawnedAtTick, int durationTicks, Vec3 preRagdollPos, String entityType, CompoundTag entityData,
-                        Map<String, PartInfo> partInfos, Map<String, UUID> partIds) {
+                        Map<String, PartInfo> partInfos, Map<String, UUID> partIds, boolean mobless) {
         public Entry {
             entityData = entityData == null ? new CompoundTag() : entityData.copy();
         }

@@ -19,17 +19,18 @@ import dev.ryanhcode.sable.companion.math.BoundingBox3i;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
-import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec3;
 import net.neoforged.neoforge.common.NeoForge;
@@ -43,7 +44,6 @@ public final class RagdollRegistry {
    private static final Map<UUID, Long> PLAYER_COOLDOWNS = new HashMap<>();
    private static final Map<UUID, Long> LAUNCH_RESERVATIONS = new HashMap<>();
    private static final long LAUNCH_RESERVATION_TICKS = 10L;
-   private static final Map<UUID, PhysicsConstraintHandle> RESTORED_HANDLES = new ConcurrentHashMap<>();
    private static boolean loggedFirstTick;
 
    private RagdollRegistry() {
@@ -255,8 +255,7 @@ public final class RagdollRegistry {
 
    public static void tryRestoreOnLoad(ServerLevel level, ServerSubLevel rootSubLevel) {
       UUID rootId = rootSubLevel.getUniqueId();
-      PhysicsConstraintHandle existing = RESTORED_HANDLES.get(rootId);
-      if (existing != null && existing.isValid()) {
+      if (hasLiveJoints(rootId)) {
          return;
       }
 
@@ -282,12 +281,18 @@ public final class RagdollRegistry {
       }
 
       RagdollLimbOptions limbs = savedData.ragdollLimbs(rootId);
-      PhysicsConstraintHandle representative = RagdollAssemblyHelper.restoreConstraints(level, loadedParts, limbs);
-      if (representative != null) {
-         RESTORED_HANDLES.put(rootId, representative);
-      }
+      RagdollAssemblyHelper.restoreConstraints(level, loadedParts, limbs);
       SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] restored playerless ragdoll {} ({} parts)",
          shortId(rootId), loadedParts.size());
+   }
+
+   private static boolean hasLiveJoints(UUID rootId) {
+      Map<BodyPart, RagdollAssemblyHelper.RagdollJoint> joints = RagdollAssemblyHelper.joints(rootId);
+      if (joints.isEmpty()) return false;
+      for (RagdollAssemblyHelper.RagdollJoint joint : joints.values()) {
+         if (joint.handle() == null || !joint.handle().isValid()) return false;
+      }
+      return true;
    }
 
    static void dropFailed(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
@@ -321,6 +326,59 @@ public final class RagdollRegistry {
       }
       Long reservedUntil = LAUNCH_RESERVATIONS.get(playerId);
       return reservedUntil != null && gameTime <= reservedUntil;
+   }
+
+   public static boolean removeById(ServerLevel level, UUID subLevelId) {
+      return removeById(level, subLevelId, false);
+   }
+
+   public static boolean removeById(ServerLevel level, UUID subLevelId, boolean smokePuff) {
+      SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
+      if (physicsSystem == null) return false;
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevelId);
+      UUID targetId = rootId != null ? rootId : subLevelId;
+      SubLevel subLevel = SubLevelContainer.getContainer(level).getSubLevel(targetId);
+      if (!(subLevel instanceof ServerSubLevel ssl) || ssl.isRemoved()) return false;
+      tryRestoreOnLoad(level, ssl);
+      if (smokePuff) emitRemovalPuff(level, ssl);
+      RagdollExpireHelper.expireImmediate(physicsSystem, level, ssl, "api remove by id");
+      return true;
+   }
+
+   public static void emitRemovalPuff(ServerLevel level, ServerSubLevel subLevel) {
+      if (subLevel == null || subLevel.isRemoved()) return;
+      Vec3 pos;
+      if (subLevel.getPlot() == null) {
+         Vector3dc p = subLevel.logicalPose().position();
+         pos = new Vec3(p.x(), p.y(), p.z());
+      } else {
+         pos = Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(subLevel.getPlot().getCenterBlock()));
+      }
+      if (pos == null) return;
+      level.sendParticles(ParticleTypes.CAMPFIRE_COSY_SMOKE, pos.x, pos.y, pos.z, 20, 0.45, 0.25, 0.45, 0.04);
+      level.playSound(null, pos.x, pos.y, pos.z, SoundEvents.BREEZE_JUMP, SoundSource.BLOCKS, 0.8F, 1.15F);
+   }
+
+   @Nullable
+   public static UUID dismember(ServerLevel level, UUID rootId, BodyPart limb) {
+      UUID limbId = RagdollAssemblyHelper.dismember(rootId, limb);
+      if (limbId != null) syncSavedAfterDismember(level, rootId);
+      return limbId;
+   }
+
+   @Nullable
+   public static UUID dismemberPart(ServerLevel level, UUID partSubLevelId) {
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(partSubLevelId);
+      BodyPart limb = RagdollAssemblyHelper.bodyPartOf(partSubLevelId);
+      if (rootId == null || limb == null) return null;
+      return dismember(level, rootId, limb);
+   }
+
+   private static void syncSavedAfterDismember(ServerLevel level, UUID rootId) {
+      RagdollSavedData saved = RagdollSavedData.get(level);
+      if (!saved.ragdoll(rootId).isEmpty()) {
+         saved.saveRagdoll(rootId, RagdollAssemblyHelper.linkedPartsAsMap(rootId), saved.ragdollLimbs(rootId));
+      }
    }
 
    public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
@@ -359,7 +417,6 @@ public final class RagdollRegistry {
    public static void resetState() {
       RAGDOLL_BODY_IDS.clear();
       PLAYER_COOLDOWNS.clear();
-      RESTORED_HANDLES.clear();
       RagdollAssemblyHelper.resetState();
    }
 

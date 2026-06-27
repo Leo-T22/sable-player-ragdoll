@@ -1,6 +1,7 @@
 package dev.leo.sableplayerragdoll.api;
 
 import com.mojang.authlib.GameProfile;
+import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
 import dev.leo.sableplayerragdoll.mob.api.MobRagdollEndEvent;
 import dev.leo.sableplayerragdoll.mob.api.MobRagdollLaunchOptions;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.phys.Vec3;
@@ -150,6 +152,24 @@ public final class RagdollAPI {
       return new ActivePlayerlessRagdollSession(level, body, level.getGameTime());
    }
 
+   public static boolean remove(ServerLevel level, UUID subLevelId) {
+      return RagdollRegistry.removeById(level, subLevelId);
+   }
+
+   public static boolean remove(ServerLevel level, UUID subLevelId, boolean smokePuff) {
+      return RagdollRegistry.removeById(level, subLevelId, smokePuff);
+   }
+
+   @Nullable
+   public static UUID dismember(ServerLevel level, UUID rootId, BodyPart limb) {
+      return RagdollRegistry.dismember(level, rootId, limb);
+   }
+
+   @Nullable
+   public static UUID dismember(ServerLevel level, UUID partSubLevelId) {
+      return RagdollRegistry.dismemberPart(level, partSubLevelId);
+   }
+
    @Nullable
    public static RagdollSession activeSession(ServerPlayer player) {
       ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID());
@@ -218,6 +238,29 @@ public final class RagdollAPI {
       if (mob.level() instanceof ServerLevel serverLevel) {
          MobRagdollAssembly.despawn(serverLevel, mob);
       }
+   }
+
+   @Nullable
+   public static UUID spawnMobless(ServerLevel level, EntityType<?> type, Vec3 position) {
+      return spawnMobless(level, type, position, Vec3.ZERO, MobRagdollAssembly.DEFAULT_MOBLESS_DURATION_TICKS);
+   }
+
+   @Nullable
+   public static UUID spawnMobless(ServerLevel level, EntityType<?> type, Vec3 position, Vec3 linearVelocity, int durationTicks) {
+      return MobRagdollAssembly.spawnMobless(level, type, position, linearVelocity, durationTicks);
+   }
+
+   public static boolean removeMobRagdoll(ServerLevel level, UUID subLevelId) {
+      return MobRagdollAssembly.removeBySubLevel(level, subLevelId, false);
+   }
+
+   public static boolean removeMobRagdoll(ServerLevel level, UUID subLevelId, boolean smokePuff) {
+      return MobRagdollAssembly.removeBySubLevel(level, subLevelId, smokePuff);
+   }
+
+   @Nullable
+   public static UUID dismemberMob(ServerLevel level, UUID partSubLevelId) {
+      return MobRagdollAssembly.dismemberBySubLevel(level, partSubLevelId);
    }
 
    private record ActiveMobRagdollSession(ServerLevel level, LivingEntity entity) implements MobRagdollSession {
