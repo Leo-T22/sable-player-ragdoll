@@ -42,7 +42,7 @@ public final class RagdollDollEntity extends LivingEntity implements IEntityWith
 
    public static AttributeSupplier.Builder createAttributes() {
       return LivingEntity.createLivingAttributes()
-         .add(Attributes.MAX_HEALTH, 20.0)
+         .add(Attributes.MAX_HEALTH, 0.0)
          .add(Attributes.MOVEMENT_SPEED, 0.0)
          .add(Attributes.STEP_HEIGHT, 0.0);
    }

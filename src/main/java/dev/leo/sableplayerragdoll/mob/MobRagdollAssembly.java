@@ -62,7 +62,6 @@ public final class MobRagdollAssembly {
     private static final Set<UUID> CONVERTED_ENTITIES = ConcurrentHashMap.newKeySet();
     private static final Map<UUID, RagdollState> RAGDOLL_STATES = new ConcurrentHashMap<>();
     private static final Map<UUID, PhysicsConstraintHandle> RESTORED_HANDLES = new ConcurrentHashMap<>();
-    private static final float COLLISION_SIZE_SCALE = 0.85F;
     private static final double JOINT_ANGULAR_STIFFNESS = 20.0;
     private static final double JOINT_ANGULAR_DAMPING = 20.0;
     private static final int GRAB_RESTORE_PROTECTION_TICKS = 200;
@@ -805,8 +804,8 @@ public final class MobRagdollAssembly {
             while (pending.nextPartIndex < pending.parts.size() && budget > 0) {
                 int i = pending.nextPartIndex;
                 PartSpawn part = pending.parts.get(i);
-                int maxYOffset = maxAxisBlockOffset(part.ySize());
-                int minYOffset = minAxisBlockOffset(part.ySize());
+                int maxYOffset = MobRagdollGeometry.maxAxisBlockOffset(part.ySize());
+                int minYOffset = MobRagdollGeometry.minAxisBlockOffset(part.ySize());
                 int safeY = level.getMaxBuildHeight() - 1 - maxYOffset - i * 8;
                 safeY = Math.max(level.getMinBuildHeight() - minYOffset, safeY);
                 BlockPos safePos = new BlockPos(pending.baseBlockPos.getX(), safeY, pending.baseBlockPos.getZ());
@@ -1220,86 +1219,6 @@ public final class MobRagdollAssembly {
                 .min(Comparator.comparingDouble(part -> part.part().pivotOffset().distanceToSqr(child.part().pivotOffset())));
     }
 
-    private static Vec3 worldAnchorFromModelSpace(SpawnedPart part, Vec3 modelPoint) {
-        Vec3 delta = modelPoint.subtract(part.part().centerOffset());
-        return part.worldCenter()
-                .add(part.right().scale(delta.x))
-                .add(0.0, delta.y, 0.0)
-                .add(part.forward().scale(-delta.z));
-    }
-
-    private static Vector3d localAnchor(SpawnedPart part, Vec3 worldAnchor) {
-        Vec3 local = part.subLevel().logicalPose().transformPositionInverse(worldAnchor);
-        return new Vector3d(local.x, local.y, local.z);
-    }
-
-    private static Vec3 jointPointOnChild(PartSpawn parent, PartSpawn child) {
-        if (usesPivotJoint(child.role())) {
-            return child.pivotOffset();
-        }
-        Bounds childBounds = bounds(child);
-        if (childBounds == null) {
-            return child.pivotOffset();
-        }
-        Vec3 parentCenter = parent.centerOffset();
-        return new Vec3(
-                clamp(parentCenter.x, childBounds.minX(), childBounds.maxX()),
-                clamp(parentCenter.y, childBounds.minY(), childBounds.maxY()),
-                clamp(parentCenter.z, childBounds.minZ(), childBounds.maxZ()));
-    }
-
-    private static boolean usesPivotJoint(MobPartRole role) {
-        return role == MobPartRole.ARM
-                || role == MobPartRole.LEG
-                || role == MobPartRole.WING
-                || role == MobPartRole.TAIL
-                || role == MobPartRole.HEAD;
-    }
-
-    private static Vec3 jointPointOnParent(PartSpawn parent, Vec3 childJoint) {
-        Bounds parentBounds = bounds(parent);
-        if (parentBounds == null) {
-            return childJoint;
-        }
-        return new Vec3(
-                clamp(childJoint.x, parentBounds.minX(), parentBounds.maxX()),
-                clamp(childJoint.y, parentBounds.minY(), parentBounds.maxY()),
-                clamp(childJoint.z, parentBounds.minZ(), parentBounds.maxZ()));
-    }
-
-    private static Bounds bounds(PartSpawn part) {
-        if (part.quads().isEmpty()) {
-            return null;
-        }
-        double minX = Double.POSITIVE_INFINITY;
-        double minY = Double.POSITIVE_INFINITY;
-        double minZ = Double.POSITIVE_INFINITY;
-        double maxX = Double.NEGATIVE_INFINITY;
-        double maxY = Double.NEGATIVE_INFINITY;
-        double maxZ = Double.NEGATIVE_INFINITY;
-        for (Quad quad : part.quads()) {
-            for (Vertex vertex : quad.vertices()) {
-                double x = vertex.x() / 16.0 * part.renderScale();
-                double y = (24.0 - vertex.y()) / 16.0 * part.renderScale();
-                double z = vertex.z() / 16.0 * part.renderScale();
-                minX = Math.min(minX, x);
-                minY = Math.min(minY, y);
-                minZ = Math.min(minZ, z);
-                maxX = Math.max(maxX, x);
-                maxY = Math.max(maxY, y);
-                maxZ = Math.max(maxZ, z);
-            }
-        }
-        if (!Double.isFinite(minX)) {
-            return null;
-        }
-        return new Bounds(minX, minY, minZ, maxX, maxY, maxZ);
-    }
-
-    private static double clamp(double value, double min, double max) {
-        return Math.max(min, Math.min(max, value));
-    }
-
     private static Vector3d plotAnchor(SpawnedPart part, Vec3 localOffset) {
         BlockPos plot = part.plotPos();
         Vector3d offset = new Vector3d(-localOffset.x, localOffset.y, localOffset.z);
@@ -1317,7 +1236,7 @@ public final class MobRagdollAssembly {
     }
 
     private static AssembledPart assemblePart(ServerLevel level, BlockPos pos, PartSpawn part, UUID sourceEntityId, int sourceEntityNetworkId) {
-        Set<BlockPos> blocks = collisionBlocks(pos, part);
+        Set<BlockPos> blocks = MobRagdollGeometry.collisionBlocks(pos, part);
         Map<BlockPos, BlockState> previousStates = new LinkedHashMap<>();
         for (BlockPos blockPos : blocks) {
             previousStates.put(blockPos, level.getBlockState(blockPos));
@@ -1325,9 +1244,9 @@ public final class MobRagdollAssembly {
             int yOffset = blockPos.getY() - pos.getY();
             int zOffset = blockPos.getZ() - pos.getZ();
             BlockState partState = MobRagdollBlocks.MOB_RAGDOLL_PART.get().defaultBlockState()
-                    .setValue(MobRagdollPartBlock.X_SIZE, slicePixels(collisionPixels(part.xSize()), xOffset))
-                    .setValue(MobRagdollPartBlock.Y_SIZE, slicePixels(collisionPixels(part.ySize()), yOffset))
-                    .setValue(MobRagdollPartBlock.Z_SIZE, slicePixels(collisionPixels(part.zSize()), zOffset));
+                    .setValue(MobRagdollPartBlock.X_SIZE, MobRagdollGeometry.slicePixels(MobRagdollGeometry.collisionPixels(part.xSize()), xOffset))
+                    .setValue(MobRagdollPartBlock.Y_SIZE, MobRagdollGeometry.slicePixels(MobRagdollGeometry.collisionPixels(part.ySize()), yOffset))
+                    .setValue(MobRagdollPartBlock.Z_SIZE, MobRagdollGeometry.slicePixels(MobRagdollGeometry.collisionPixels(part.zSize()), zOffset));
             level.setBlock(blockPos, partState, 3);
             if (level.getBlockEntity(blockPos) instanceof MobRagdollPartBlockEntity blockEntity) {
                 if (blockPos.equals(pos)) {
@@ -1398,56 +1317,6 @@ public final class MobRagdollAssembly {
         subLevel.updateLastPose();
     }
 
-    private static int clampPixels(float value) {
-        return Math.max(1, Math.min(16, Math.round(value)));
-    }
-
-    private static Set<BlockPos> collisionBlocks(BlockPos anchor, PartSpawn part) {
-        Set<BlockPos> blocks = new java.util.LinkedHashSet<>();
-        int minX = minAxisBlockOffset(collisionPixels(part.xSize()));
-        int maxX = maxAxisBlockOffset(collisionPixels(part.xSize()));
-        int minY = minAxisBlockOffset(collisionPixels(part.ySize()));
-        int maxY = maxAxisBlockOffset(collisionPixels(part.ySize()));
-        int minZ = minAxisBlockOffset(collisionPixels(part.zSize()));
-        int maxZ = maxAxisBlockOffset(collisionPixels(part.zSize()));
-        for (int x = minX; x <= maxX; x++) {
-            for (int y = minY; y <= maxY; y++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    blocks.add(anchor.offset(x, y, z));
-                }
-            }
-        }
-        return blocks;
-    }
-
-    private static int minAxisBlockOffset(float pixels) {
-        float size = Math.max(1.0F, pixels);
-        return (int) Math.floor((8.0F - size * 0.5F) / 16.0F);
-    }
-
-    private static int maxAxisBlockOffset(float pixels) {
-        float size = Math.max(1.0F, pixels);
-        return (int) Math.floor((8.0F + size * 0.5F - 0.0001F) / 16.0F);
-    }
-
-    private static int slicePixels(float pixels, int blockOffset) {
-        return clampPixels(sliceMax(pixels, blockOffset) - sliceMin(pixels, blockOffset));
-    }
-
-    private static float collisionPixels(float visualPixels) {
-        return Math.max(1.0F, visualPixels * COLLISION_SIZE_SCALE);
-    }
-
-    private static float sliceMin(float pixels, int blockOffset) {
-        float desiredMin = 8.0F - Math.max(1.0F, pixels) * 0.5F;
-        return Math.max(0.0F, desiredMin - blockOffset * 16.0F);
-    }
-
-    private static float sliceMax(float pixels, int blockOffset) {
-        float desiredMax = 8.0F + Math.max(1.0F, pixels) * 0.5F;
-        return Math.min(16.0F, desiredMax - blockOffset * 16.0F);
-    }
-
     public record PartSpawn(
             MobPartRole role,
             String entityType,
@@ -1509,9 +1378,6 @@ public final class MobRagdollAssembly {
     }
 
     private record JointResult(int count, PhysicsConstraintHandle representative) {
-    }
-
-    private record Bounds(double minX, double minY, double minZ, double maxX, double maxY, double maxZ) {
     }
 
     private static final class PendingAssembly {
