@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import net.minecraft.client.model.PlayerModel;
+import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.entity.RenderLayerParent;
 import net.minecraft.world.entity.LivingEntity;
@@ -22,24 +23,57 @@ import top.theillusivec4.curios.api.type.inventory.ICurioStacksHandler;
 
 final class CuriosRenderHelper {
 
-    private static final Map<String, Set<BodyPart>> SLOT_BODY_PARTS = Map.of(
-        "head",     Set.of(BodyPart.HEAD),
-        "necklace", Set.of(BodyPart.TORSO),
-        "back",     Set.of(BodyPart.TORSO),
-        "belt",     Set.of(BodyPart.TORSO),
-        "charm",    Set.of(BodyPart.TORSO),
-        "curio",    Set.of(BodyPart.TORSO),
-        "ring",     Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM),
-        "hands",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM),
-        "feet",     Set.of(BodyPart.RIGHT_LEG)
+    private static final Map<String, Set<BodyPart>> SLOT_BODY_PARTS = Map.ofEntries(
+        Map.entry("head",     Set.of(BodyPart.HEAD)),
+        Map.entry("necklace", Set.of(BodyPart.TORSO)),
+        Map.entry("back",     Set.of(BodyPart.TORSO)),
+        Map.entry("belt",     Set.of(BodyPart.TORSO)),
+        Map.entry("charm",    Set.of(BodyPart.TORSO)),
+        Map.entry("curio",    Set.of(BodyPart.TORSO)),
+        Map.entry("ring",     Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        Map.entry("hands",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM)),
+        Map.entry("feet",     Set.of(BodyPart.LEFT_LEG, BodyPart.RIGHT_LEG))
     );
+
+    /**
+     * Slots where items should be distributed across left/right arm by index parity.
+     * Even index -> RIGHT_ARM, odd index -> LEFT_ARM.
+     */
+    private static final Set<String> SPLIT_ARM_SLOTS = Set.of("ring", "hands");
 
     private CuriosRenderHelper() {}
 
-    private static boolean slotBelongsToPart(String slotId, BodyPart bodyPart) {
+    /**
+     * Checks whether a given slot+index combination belongs to a body part.
+     * For split-arm slots like ring/hands, distributes by index parity
+     * (even -> RIGHT_ARM, odd -> LEFT_ARM) so each arm block entity
+     * only renders its share of items.
+     */
+    private static boolean slotBelongsToPart(String slotId, int index, BodyPart bodyPart) {
         Set<BodyPart> parts = SLOT_BODY_PARTS.get(slotId);
-        // Unknown slots default to TORSO so they at least appear somewhere.
-        return parts == null ? bodyPart == BodyPart.TORSO : parts.contains(bodyPart);
+        if (parts == null) return bodyPart == BodyPart.TORSO;
+        if (!SPLIT_ARM_SLOTS.contains(slotId)) return parts.contains(bodyPart);
+        // Split-arm slots: distribute across arms by index parity
+        if (bodyPart == BodyPart.LEFT_ARM || bodyPart == BodyPart.RIGHT_ARM) {
+            BodyPart expectedArm = (index % 2 == 0) ? BodyPart.RIGHT_ARM : BodyPart.LEFT_ARM;
+            return bodyPart == expectedArm;
+        }
+        return false;
+    }
+
+    /**
+     * Returns the opposite limb model part for a given body part.
+     * Used to temporarily hide it during rendering so that Curio renderers
+     * that read model parts for positioning don't double-render on the wrong side.
+     */
+    private static ModelPart oppositeLimb(BodyPart bodyPart, PlayerModel<?> model) {
+        return switch (bodyPart) {
+            case LEFT_LEG  -> model.rightLeg;
+            case RIGHT_LEG -> model.leftLeg;
+            case LEFT_ARM  -> model.rightArm;
+            case RIGHT_ARM -> model.leftArm;
+            default -> null;
+        };
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
@@ -53,18 +87,26 @@ final class CuriosRenderHelper {
         int packedLight,
         float partialTick
     ) {
-        for (String slotId : storedSlotIds(blockEntity)) {
-            if (!slotBelongsToPart(slotId, bodyPart)) continue;
+        PlayerModel<RagdollDollEntity> model = parent.getModel();
+        ModelPart offLimb = oppositeLimb(bodyPart, model);
 
+        for (String slotId : storedSlotIds(blockEntity)) {
             List<ItemStack> stacks = blockEntity.getCurioItems().getOrDefault(slotId, List.of());
             List<ItemStack> cosmetics = blockEntity.getCurioCosmeticItems().getOrDefault(slotId, List.of());
             int slots = Math.max(stacks.size(), cosmetics.size());
             for (int i = 0; i < slots; i++) {
+                if (!slotBelongsToPart(slotId, i, bodyPart)) continue;
                 if (!storedShouldRender(blockEntity, slotId, i)) continue;
                 ItemStack stack = storedEffectiveStack(cosmetics, i, storedStack(stacks, i));
                 if (stack.isEmpty()) continue;
 
                 SlotContext slotContext = new SlotContext(slotId, entity, i, false, true);
+
+                float offLimbY = 0.0f;
+                if (offLimb != null) {
+                    offLimbY = offLimb.y;
+                    offLimb.y += 10000.0f;
+                }
 
                 CuriosRendererRegistry.getRenderer(stack.getItem()).ifPresent(renderer -> {
                     try {
@@ -83,6 +125,10 @@ final class CuriosRenderHelper {
                         // Swallow rendering errors for individual curio items.
                     }
                 });
+
+                if (offLimb != null) {
+                    offLimb.y = offLimbY;
+                }
             }
         }
     }
@@ -124,23 +170,31 @@ final class CuriosRenderHelper {
         var handler = entity.getCapability(CuriosCapability.INVENTORY);
         if (handler == null) return;
 
+        PlayerModel<RagdollDollEntity> model = parent.getModel();
+        ModelPart offLimb = oppositeLimb(bodyPart, model);
+
         for (Map.Entry<String, ICurioStacksHandler> entry : handler.getCurios().entrySet()) {
             String slotId = entry.getKey();
-            if (!slotBelongsToPart(slotId, bodyPart)) continue;
-
             ICurioStacksHandler stacksHandler = entry.getValue();
             var stacks = stacksHandler.getStacks();
             var cosmetics = stacksHandler.getCosmeticStacks();
             var renders = stacksHandler.getRenders();
 
             for (int i = 0; i < stacks.getSlots(); i++) {
-                if (!renders.get(i)) continue; // rendering disabled for this slot index
+                if (!slotBelongsToPart(slotId, i, bodyPart)) continue;
+                if (!renders.get(i)) continue;
 
                 ItemStack cosmetic = i < cosmetics.getSlots() ? cosmetics.getStackInSlot(i) : ItemStack.EMPTY;
                 ItemStack stack = !cosmetic.isEmpty() ? cosmetic : stacks.getStackInSlot(i);
                 if (stack.isEmpty()) continue;
 
                 SlotContext slotContext = new SlotContext(slotId, entity, i, false, true);
+
+                float offLimbY = 0.0f;
+                if (offLimb != null) {
+                    offLimbY = offLimb.y;
+                    offLimb.y += 10000.0f;
+                }
 
                 CuriosRendererRegistry.getRenderer(stack.getItem()).ifPresent(renderer -> {
                     try {
@@ -160,6 +214,10 @@ final class CuriosRenderHelper {
                         // Swallow rendering errors for individual curio items to avoid crashing.
                     }
                 });
+
+                if (offLimb != null) {
+                    offLimb.y = offLimbY;
+                }
             }
         }
     }
