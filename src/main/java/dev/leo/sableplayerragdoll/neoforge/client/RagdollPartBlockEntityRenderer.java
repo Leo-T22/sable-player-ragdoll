@@ -10,13 +10,18 @@ import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
 import net.minecraft.client.CameraType;
 import dev.leo.sableplayerragdoll.neoforge.mixin.LivingEntityRendererAccessor;
 import java.util.EnumSet;
+import java.util.List;
 import java.util.Set;
+import java.lang.reflect.Field;
 import java.util.UUID;
 import net.neoforged.fml.ModList;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.PlayerModel;
-import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.model.geom.builders.CubeDeformation;
+import net.minecraft.client.model.geom.builders.MeshDefinition;
+import net.minecraft.client.model.geom.builders.PartDefinition;
+import net.minecraft.client.model.geom.ModelLayers;
 import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderType;
 import net.minecraft.client.renderer.blockentity.BlockEntityRenderer;
@@ -55,9 +60,12 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
    private ResourceLocation currentTexture = DefaultPlayerSkin.getDefaultTexture();
    private ResourceLocation currentCapeTexture = null;
 
-   public RagdollPartBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
-      ModelPart defaultRoot = context.bakeLayer(ModelLayers.PLAYER);
-      ModelPart slimRoot = context.bakeLayer(ModelLayers.PLAYER_SLIM);
+  public RagdollPartBlockEntityRenderer(BlockEntityRendererProvider.Context context) {
+      // Bypass EMF's bakeLayer interception by building the vanilla player model directly
+      MeshDefinition meshWide = PlayerModel.createMesh(CubeDeformation.NONE, false);
+      MeshDefinition meshSlim = PlayerModel.createMesh(CubeDeformation.NONE, true);
+      ModelPart defaultRoot = meshWide.getRoot().bake(64, 64);
+      ModelPart slimRoot = meshSlim.getRoot().bake(64, 64);
       this.defaultModel = new PlayerModel<>(defaultRoot, false);
       this.slimModel = new PlayerModel<>(slimRoot, true);
       this.defaultCloak = defaultRoot.getChild("cloak");
