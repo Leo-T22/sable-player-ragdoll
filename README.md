@@ -1,3 +1,5 @@
+Temporarily fixed the Curios display issue and the thick-arm display issue with FA+player1.1
+
 # Sable Ragdolls
 
 Sable Ragdolls is a mod that adds player and mob ragdolls powered by Sable's physics system.
