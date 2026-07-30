@@ -72,6 +72,11 @@ final class RagdollEquipmentHelper {
             accessoriesCosmeticItems = accessories.cosmeticItems();
             accessoriesRenderOptions = accessories.renderOptions();
          }
+         if (ModList.get().isLoaded("cosmeticarmorreworkedforked")) {
+            RagdollCosArmorHelper.CosArmorSnapshot armor = RagdollCosArmorHelper.captureSnapshot(player);
+            cosmeticArmorItems = armor.items();
+            cosmeticArmorRenderOptions = armor.renderOptions();
+         }
       }
 
       return new RagdollEquipmentSnapshot(
