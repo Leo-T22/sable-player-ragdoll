@@ -48,6 +48,8 @@ final class RagdollEquipmentHelper {
       Map<String, List<ItemStack>> accessoriesItems = Map.of();
       Map<String, List<ItemStack>> accessoriesCosmeticItems = Map.of();
       Map<String, List<Boolean>> accessoriesRenderOptions = Map.of();
+      Map<String, List<ItemStack>> cosmeticArmorItems = Map.of();
+      Map<String, List<Boolean>> cosmeticArmorRenderOptions = Map.of();
 
       if (resolved == RagdollEquipmentScope.ALL || resolved == RagdollEquipmentScope.VANILLA) {
          EnumMap<EquipmentSlot, ItemStack> vanilla = new EnumMap<>(EquipmentSlot.class);
@@ -72,7 +74,12 @@ final class RagdollEquipmentHelper {
          }
       }
 
-      return new RagdollEquipmentSnapshot(vanillaItems, curioItems, curioCosmeticItems, curioRenderOptions, accessoriesItems, accessoriesCosmeticItems, accessoriesRenderOptions);
+      return new RagdollEquipmentSnapshot(
+              vanillaItems,
+              curioItems, curioCosmeticItems, curioRenderOptions,
+              accessoriesItems, accessoriesCosmeticItems, accessoriesRenderOptions,
+              cosmeticArmorItems, cosmeticArmorRenderOptions
+      );
    }
 
    static void applySnapshot(ServerLevel level, UUID rootId, RagdollEquipmentSnapshot snapshot) {
