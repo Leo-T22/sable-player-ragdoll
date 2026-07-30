@@ -120,6 +120,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       var playerRenderer = minecraft.getEntityRenderDispatcher().getSkinMap().get(slim ? PlayerSkin.Model.SLIM : PlayerSkin.Model.WIDE);
 
       boolean accessoriesLoaded = ModList.get().isLoaded("accessories");
+      boolean cosmeticArmorsLoaded = ModList.get().isLoaded("cosmeticarmorreworkedforked");
 
       if (playerRenderer instanceof LivingEntityRendererAccessor accessor) {
          boolean wasInvisible = entity.isInvisible();
@@ -130,10 +131,16 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
          for (EquipmentSlot slot : EquipmentSlot.values()) {
             oldItems[slot.ordinal()] = entity.getItemBySlot(slot);
             ItemStack candidate = blockEntity.itemBySlot(slot);
+
             if (accessoriesLoaded && slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && blockEntity.hasAccessoriesItems()) {
                ItemStack cosmetic = AccessoriesRenderHelper.storedCosmeticArmorOverride(blockEntity, slot);
                if (cosmetic != null) candidate = cosmetic;
             }
+            if (cosmeticArmorsLoaded && slot.getType() == EquipmentSlot.Type.HUMANOID_ARMOR && blockEntity.hasCosmeticArmor()) {
+               ItemStack cosmetic = CosArmorRenderHelper.storedCosmeticArmorOverride(blockEntity, slot);
+               if (cosmetic != null) candidate = cosmetic;
+            }
+
             ItemStack toShow = slotsForPart(bodyPart).contains(slot) && !isArmorSlotBlockedForPart(bodyPart, slot, candidate)
                ? candidate : ItemStack.EMPTY;
             entity.setItemSlot(slot, toShow);
