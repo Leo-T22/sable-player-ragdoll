@@ -329,6 +329,9 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    public Map<String, List<Boolean>> getAccessoriesRenderOptions() {
       return Collections.unmodifiableMap(this.accessoriesRenderOptions);
    }
+   public Map<String, List<ItemStack>> getCosmeticArmorItems() {
+      return Collections.unmodifiableMap(this.cosmeticArmorItems);
+   }
    public Map<String, List<Boolean>> getCosmeticArmorsRenderOptions() {
       return Collections.unmodifiableMap(this.cosmeticArmorsRenderOptions);
    }

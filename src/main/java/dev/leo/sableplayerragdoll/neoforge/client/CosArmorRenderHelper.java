@@ -241,24 +241,19 @@ final class CosArmorRenderHelper {
 
                 });
 
-        public void handlePreRenderPlayer(Player player) {
-            Deque<Runnable> queue = cache.getUnchecked(player);
+        // todo: implement isSkinArmor(slot) into cosmeticArmorsRenderOptions
+        // Added armor param because I dont feel like getting the armor straight from the entity
+        public void handlePreRenderPlayer(RagdollPartBlockEntity ragdoll, ItemStack armor) {
+            Deque<Runnable> queue = cache.getUnchecked(ragdoll);
             restoreItems(queue);
-            NonNullList<ItemStack> armor = player.getInventory().armor;
-
-            for (int i = 0; i < armor.size(); i++) {
-                int slot = i;
-                ItemStack stack = armor.get(slot);
-                queue.add(() -> armor.set(slot, stack));
-            }
 
             if (PlayerRenderHandler.Disabled)
                 return;
 
-            InventoryCosArmor invCosArmor = ModObjects.invMan.getCosArmorInventoryClient(player.getUUID());
+            InventoryCosArmor invCosArmor = ModObjects.invMan.getCosArmorInventoryClient(ragdoll.());
 
             if (ModConfigs.getCosArmorStackRendering()) {
-                ItemStack[] cosArmor = cosArmorCache.getUnchecked(player);
+                ItemStack[] cosArmor = cosArmorCache.getUnchecked(ragdoll);
                 for (int i = 0; i < armor.size(); i++) {
                     if (invCosArmor.isSkinArmor(i)) {
                         cosArmor[i] = null;
