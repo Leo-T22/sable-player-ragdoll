@@ -241,7 +241,6 @@ final class CosArmorRenderHelper {
 
                 });
 
-        // todo: implement isSkinArmor(slot) into cosmeticArmorsRenderOptions
         // Added armor param because I dont feel like getting the armor straight from the entity
         public void handlePreRenderPlayer(RagdollPartBlockEntity ragdoll, ItemStack armor) {
             Deque<Runnable> queue = cache.getUnchecked(ragdoll);
