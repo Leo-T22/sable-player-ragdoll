@@ -16,8 +16,8 @@ public record RagdollEquipmentSnapshot(
    Map<String, List<ItemStack>> accessoriesItems,
    Map<String, List<ItemStack>> accessoriesCosmeticItems,
    Map<String, List<Boolean>> accessoriesRenderOptions,
+
    // PR - Cosmetic Armor mod support
-   // TODO: learn how to render these
    Map<String, List<ItemStack>> cosmeticArmorItems,
    Map<String, List<Boolean>> cosmeticArmorRenderOptions
 ) {
