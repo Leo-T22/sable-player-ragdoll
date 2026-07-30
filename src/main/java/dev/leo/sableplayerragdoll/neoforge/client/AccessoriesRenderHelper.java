@@ -41,7 +41,7 @@ final class AccessoriesRenderHelper {
         Map.entry("wrist",    Set.of(BodyPart.LEFT_ARM, BodyPart.RIGHT_ARM))
     );
 
-    //f irst match wins.
+    // first match wins.
     private record KeywordRule(String keyword, Set<BodyPart> parts) {}
     private static final List<KeywordRule> SLOT_KEYWORDS = List.of(
         // Head
