@@ -2,6 +2,7 @@ package dev.leo.sableplayerragdoll.neoforge.mixin;
 
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.client.MobRagdollClientState;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -31,7 +32,7 @@ public abstract class EntityRagdollHiddenMixin {
             if (self instanceof Player && self.isInvisible() && self.getVehicle() instanceof RagdollSeatEntity) {
                 return true;
             }
-            return false;
+            return MobRagdollClientState.isHidden(self);
         }
         if (self instanceof ServerPlayer serverPlayer && RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer)) {
             return true;

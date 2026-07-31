@@ -131,6 +131,7 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityMount);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityJoinLevel);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onStartTracking);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockPlaced);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockBreak);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onLeftClickBlock);
@@ -204,6 +205,12 @@ public final class SablePlayerRagdollNeoForge {
    private static void onEntityJoinLevel(EntityJoinLevelEvent event) {
       if (event.getLevel() instanceof ServerLevel level && event.getEntity() instanceof LivingEntity living) {
          MobRagdollAssembly.hideLoadedRagdollSource(level, living);
+      }
+   }
+
+   private static void onStartTracking(PlayerEvent.StartTracking event) {
+      if (event.getEntity() instanceof ServerPlayer player) {
+         MobRagdollAssembly.syncClientSourceState(player, event.getTarget());
       }
    }
 

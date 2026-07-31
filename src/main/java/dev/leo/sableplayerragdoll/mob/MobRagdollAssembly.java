@@ -8,6 +8,7 @@ import dev.leo.sableplayerragdoll.mob.api.MobRagdollEndEvent;
 import dev.leo.sableplayerragdoll.mob.api.MobRagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.mob.api.MobRagdollStartEvent;
 import dev.leo.sableplayerragdoll.mob.network.MobRagdollLaunchRequestPacket;
+import dev.leo.sableplayerragdoll.mob.network.MobRagdollSourceStatePacket;
 import dev.leo.sableplayerragdoll.api.RagdollAPI;
 import dev.leo.sableplayerragdoll.api.RagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.api.RagdollLimbOptions;
@@ -375,6 +376,7 @@ public final class MobRagdollAssembly {
         if (!CONVERTED_ENTITIES.remove(uuid)) {
             return;
         }
+        syncClientSourceState(entity, false);
         RagdollState state = RAGDOLL_STATES.remove(uuid);
         forgetJoints(state);
         RESTORED_UUIDS.remove(uuid);
@@ -845,6 +847,7 @@ public final class MobRagdollAssembly {
         }
         hideRagdollSource(entity);
         RAGDOLL_STATES.put(entity.getUUID(), new RagdollState(List.copyOf(spawnedParts), level.getGameTime(), entity.position(), pending.durationTicks));
+        syncClientSourceState(entity, true);
 
         Map<String, UUID> partIds = new LinkedHashMap<>();
         Map<String, MobRagdollSavedData.PartInfo> partInfos = new LinkedHashMap<>();
@@ -899,6 +902,9 @@ public final class MobRagdollAssembly {
     }
 
     private static void discardRagdoll(ServerLevel level, UUID uuid) {
+        if (level.getEntity(uuid) instanceof Entity entity) {
+            syncClientSourceState(entity, false);
+        }
         RagdollState state = RAGDOLL_STATES.remove(uuid);
         forgetJoints(state);
         CONVERTED_ENTITIES.remove(uuid);
@@ -950,6 +956,7 @@ public final class MobRagdollAssembly {
         LivingEntity target = level.getEntity(uuid) instanceof LivingEntity loaded ? loaded
                 : (saved == null || saved.mobless() ? null : recreateEntity(level, uuid, saved));
         if (target != null) {
+            syncClientSourceState(target, false);
             Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
             NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(target, exitVelocity, MobRagdollEndEvent.Reason.EXPIRED));
             if (target.isPassenger()) {
@@ -970,6 +977,16 @@ public final class MobRagdollAssembly {
                 }
             }
         }
+    }
+
+    public static void syncClientSourceState(ServerPlayer player, Entity entity) {
+        if (entity.level() instanceof ServerLevel level && isActiveOrSavedRagdollSource(level, entity.getUUID())) {
+            PacketDistributor.sendToPlayer(player, new MobRagdollSourceStatePacket(entity.getId(), true));
+        }
+    }
+
+    private static void syncClientSourceState(Entity entity, boolean hidden) {
+        PacketDistributor.sendToPlayersTrackingEntity(entity, new MobRagdollSourceStatePacket(entity.getId(), hidden));
     }
 
     private static void removeSavedSubLevels(SubLevelContainer container, MobRagdollSavedData.Entry saved) {

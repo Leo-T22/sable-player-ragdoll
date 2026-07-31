@@ -13,5 +13,6 @@ public final class MobRagdollNetworking {
         registrar.playToServer(MobRagdollSpawnPacket.TYPE, MobRagdollSpawnPacket.STREAM_CODEC, MobRagdollSpawnPacket::handle);
         registrar.playToServer(MobRagdollDespawnPacket.TYPE, MobRagdollDespawnPacket.STREAM_CODEC, MobRagdollDespawnPacket::handle);
         registrar.playToClient(MobRagdollLaunchRequestPacket.TYPE, MobRagdollLaunchRequestPacket.STREAM_CODEC, MobRagdollLaunchRequestPacket::handle);
+        registrar.playToClient(MobRagdollSourceStatePacket.TYPE, MobRagdollSourceStatePacket.STREAM_CODEC, MobRagdollSourceStatePacket::handle);
     }
 }
