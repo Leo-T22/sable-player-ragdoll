@@ -42,6 +42,7 @@ public final class RagdollSessionManager {
    private static final int MIN_TICKS_BEFORE_SPEED_RELEASE = 8;
    private static final int NON_PLAYER_DURATION_SCALE = 3;
    private static final Set<UUID> ACTIVE = ConcurrentHashMap.newKeySet();
+   private static final ConcurrentHashMap<UUID, UUID> ACTIVE_BY_PLAYER = new ConcurrentHashMap<>();
    private static final ConcurrentHashMap<UUID, List<DespawnCondition>> CUSTOM_DESPAWN_CONDITIONS = new ConcurrentHashMap<>();
    private static final Set<UUID> DISMOUNT_LOCKED = ConcurrentHashMap.newKeySet();
    private static final ConcurrentHashMap<UUID, Vector3d> LAST_VELOCITIES = new ConcurrentHashMap<>();
@@ -65,6 +66,7 @@ public final class RagdollSessionManager {
       tag.putLong(START_TICK_KEY, startTick);
       if (playerId != null) {
          tag.putUUID(PLAYER_ID_KEY, playerId);
+         ACTIVE_BY_PLAYER.put(playerId, subLevel.getUniqueId());
       }
 
       tag.putBoolean(NON_PLAYER_KEY, nonPlayer);
@@ -74,6 +76,10 @@ public final class RagdollSessionManager {
    }
 
    public static void unregister(ServerSubLevel subLevel) {
+      UUID playerId = getPlayerId(subLevel);
+      if (playerId != null) {
+         ACTIVE_BY_PLAYER.remove(playerId, subLevel.getUniqueId());
+      }
       ACTIVE.remove(subLevel.getUniqueId());
       CUSTOM_DESPAWN_CONDITIONS.remove(subLevel.getUniqueId());
       DISMOUNT_LOCKED.remove(subLevel.getUniqueId());
@@ -94,6 +100,9 @@ public final class RagdollSessionManager {
    static void detachPlayer(ServerSubLevel subLevel, PlayerlessDespawnRule rule, long currentGameTime) {
       CompoundTag tag = subLevel.getUserDataTag();
       if (tag == null) return;
+      if (tag.hasUUID(PLAYER_ID_KEY)) {
+         ACTIVE_BY_PLAYER.remove(tag.getUUID(PLAYER_ID_KEY), subLevel.getUniqueId());
+      }
       tag.remove(PLAYER_ID_KEY);
       tag.putBoolean(NON_PLAYER_KEY, true);
       tag.putLong(START_TICK_KEY, currentGameTime);
@@ -117,16 +126,22 @@ public final class RagdollSessionManager {
    }
 
    public static @Nullable ServerSubLevel activeRagdollForPlayer(ServerLevel level, UUID playerId) {
+      UUID subLevelId = ACTIVE_BY_PLAYER.get(playerId);
+      if (subLevelId == null) {
+         return null;
+      }
+
       SubLevelContainer container = SubLevelContainer.getContainer(level);
       if (!(container instanceof ServerSubLevelContainer serverContainer)) {
          return null;
       }
 
-      for (UUID id : new ArrayList<>(ACTIVE)) {
-         SubLevel subLevel = serverContainer.getSubLevel(id);
-         if (subLevel instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved() && playerId.equals(getPlayerId(serverSubLevel))) {
+      SubLevel subLevel = serverContainer.getSubLevel(subLevelId);
+      if (subLevel instanceof ServerSubLevel serverSubLevel) {
+         if (!serverSubLevel.isRemoved() && playerId.equals(getPlayerId(serverSubLevel))) {
             return serverSubLevel;
          }
+         ACTIVE_BY_PLAYER.remove(playerId, subLevelId);
       }
 
       return null;
@@ -179,6 +194,10 @@ public final class RagdollSessionManager {
                   SubLevel subLevel = serverContainer.getSubLevel(id);
                   if (subLevel instanceof ServerSubLevel serverSubLevel) {
                      if (serverSubLevel.isRemoved() || !isMarkedRagdoll(serverSubLevel)) {
+                        UUID playerId = getPlayerId(serverSubLevel);
+                        if (playerId != null) {
+                           ACTIVE_BY_PLAYER.remove(playerId, id);
+                        }
                         ACTIVE.remove(id);
                         LAST_VELOCITIES.remove(id);
                         NEXT_IMPACT_DAMAGE_TICKS.remove(id);
