@@ -312,9 +312,9 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    public void setCosmeticArmorItems(String slotName, List<ItemStack> stacks) {
       if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
-         this.accessoriesCosmeticItems.remove(slotName);
+         this.cosmeticArmorItems.remove(slotName);
       } else {
-         this.accessoriesCosmeticItems.put(slotName, Collections.unmodifiableList(new ArrayList<>(stacks)));
+         this.cosmeticArmorItems.put(slotName, Collections.unmodifiableList(new ArrayList<>(stacks)));
       }
       this.setChanged();
    }

@@ -47,11 +47,8 @@ final class CosArmorRenderHelper {
 
     @Nullable
     static ItemStack storedCosmeticArmorOverride(RagdollPartBlockEntity blockEntity, EquipmentSlot slot) {
-        SlotTypeReference reference = ArmorSlotTypes.getReferenceFromSlot(slot);
-        if (reference == null) return null;
-        String slotName = reference.slotName();
-        if (!storedShouldRender(blockEntity, slotName, 0)) return ItemStack.EMPTY;
-        List<ItemStack> cosmeticItems = blockEntity.getAccessoriesCosmeticItems().get(slotName);
+        if (!storedShouldRender(blockEntity, "main", 0)) return ItemStack.EMPTY;
+        List<ItemStack> cosmeticItems = blockEntity.getCosmeticArmorItems().get("main");
         if (cosmeticItems == null || cosmeticItems.isEmpty()) return null;
         ItemStack item = cosmeticItems.get(0);
         return item.isEmpty() ? null : item;
@@ -113,6 +110,9 @@ final class CosArmorRenderHelper {
 
         var invCosArmor = blockEntity.getCosmeticArmorItems().get("main");
 
+        if (invCosArmor == null || invCosArmor.isEmpty())
+            return;
+
         if (blockEntity.getCosmeticArmorsRenderOptions().get("main").get(slot))
             return;
 
@@ -128,11 +128,13 @@ final class CosArmorRenderHelper {
 
         try {
             ((Player)entity).getInventory().armor.set(slot, cosStack);
-            if (layer instanceof HumanoidArmorLayerAccessor accessor) {
-                accessor.renderPlayerArmor(poseStack, buffer, entity, equipmentSlot, packedLight, accessor.accessPlayerModel(equipmentSlot));
-            }
+            //if (layer instanceof HumanoidArmorLayerAccessor accessor) {
+            ((HumanoidArmorLayerAccessor)layer).renderPlayerArmor(poseStack, buffer, entity, equipmentSlot, packedLight, ((HumanoidArmorLayerAccessor)layer).accessPlayerModel(equipmentSlot));
+            //}
         } finally {
             ((Player)entity).getInventory().armor.set(slot, originalStack);
+            // attempted fix?
+            ((HumanoidArmorLayerAccessor)layer).renderPlayerArmor(poseStack, buffer, entity, equipmentSlot, packedLight, ((HumanoidArmorLayerAccessor)layer).accessPlayerModel(equipmentSlot));
         }
     }
 
@@ -210,7 +212,7 @@ final class CosArmorRenderHelper {
     }
 
     private static boolean storedShouldRender(RagdollPartBlockEntity blockEntity, String slotName, int index) {
-        List<Boolean> options = blockEntity.getAccessoriesRenderOptions().get(slotName);
+        List<Boolean> options = blockEntity.getCosmeticArmorsRenderOptions().get(slotName);
         return options == null || index >= options.size() || Boolean.TRUE.equals(options.get(index));
     }
 }

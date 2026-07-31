@@ -29,6 +29,9 @@ final class RagdollEquipmentHelper {
       if (ModList.get().isLoaded("accessories")) {
          RagdollAccessoriesEquipmentHelper.applyToPart(part, player);
       }
+      if (ModList.get().isLoaded("cosmeticarmorreworkedforked")) {
+         RagdollCosArmorHelper.applyToPart(part, player);
+      }
    }
 
    static void applyFrom(ServerLevel level, UUID rootId, Player player) {

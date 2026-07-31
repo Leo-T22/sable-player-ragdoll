@@ -203,7 +203,7 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
          }
       }
       if (ModList.get().isLoaded("cosmeticarmorreworkedforked")) {
-         if (blockEntity.hasAccessoriesItems()) {
+         if (blockEntity.hasCosmeticArmor()) {
             CosArmorRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick, playerRenderer);
          }
       }
