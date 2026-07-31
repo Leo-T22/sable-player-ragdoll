@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.gen.Invoker;
 @Mixin(HumanoidArmorLayer.class)
 public interface HumanoidArmorLayerAccessor {
     @Invoker("getArmorModel")
-    <A> A accessPlayerModel();
+    <A> A accessPlayerModel(EquipmentSlot slot);
     @Invoker("Lnet/minecraft/client/renderer/entity/layers/HumanoidArmorLayer;renderArmorPiece(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;Lnet/minecraft/world/entity/LivingEntity;Lnet/minecraft/world/entity/EquipmentSlot;ILnet/minecraft/client/model/HumanoidModel;)V")
     <T, A> void renderPlayerArmor(PoseStack poseStack, MultiBufferSource bufferSource, T livingEntity, EquipmentSlot slot, int packedLight, A model);
 }

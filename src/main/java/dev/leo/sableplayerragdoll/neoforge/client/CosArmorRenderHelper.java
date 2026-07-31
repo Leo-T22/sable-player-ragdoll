@@ -129,7 +129,7 @@ final class CosArmorRenderHelper {
         try {
             ((Player)entity).getInventory().armor.set(slot, cosStack);
             if (layer instanceof HumanoidArmorLayerAccessor accessor) {
-                accessor.renderPlayerArmor(poseStack, buffer, entity, equipmentSlot, packedLight, accessor.accessPlayerModel());
+                accessor.renderPlayerArmor(poseStack, buffer, entity, equipmentSlot, packedLight, accessor.accessPlayerModel(equipmentSlot));
             }
         } finally {
             ((Player)entity).getInventory().armor.set(slot, originalStack);
