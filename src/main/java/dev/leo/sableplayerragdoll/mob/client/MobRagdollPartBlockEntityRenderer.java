@@ -10,8 +10,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import net.minecraft.client.Minecraft;
@@ -114,7 +116,11 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
         }
 
         EntityModel model = livingRenderer.getModel();
-        List<NamedModelPart> modelParts = MobRagdollModelParts.collectNamedParts(model);
+        List<RenderLayer<?, ?>> renderLayers = layers(livingRenderer);
+        Map<RenderLayer<?, ?>, LayerModelAccess> layerModels = new IdentityHashMap<>();
+        for (RenderLayer<?, ?> layer : renderLayers) {
+            layerModels.put(layer, inspectLayerModels(layer));
+        }
         Set<String> keepNames = new HashSet<>(blockEntity.keepPartNames());
         keepNames.add(blockEntity.partName());
 
@@ -128,8 +134,17 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
         boolean young = blockEntity.baby();
 
         List<SavedPart> saved = new ArrayList<>();
+        List<EmfVanillaModelCompat.Session> vanillaSessions = new ArrayList<>();
         boolean pushed = false;
         try {
+            vanillaSessions.add(EmfVanillaModelCompat.enter(model));
+            for (RenderLayer<?, ?> layer : renderLayers) {
+                for (EntityModel<?> layerModel : layerModels.get(layer).models()) {
+                    vanillaSessions.add(EmfVanillaModelCompat.enter(layerModel));
+                }
+            }
+
+            List<NamedModelPart> modelParts = MobRagdollModelParts.collectNamedParts(model);
             setModelYoung(model, young);
             model.prepareMobModel(livingEntity, 0.0F, 0.0F, RAGDOLL_ANIMATION_TIME);
             setModelYoung(model, young);
@@ -161,15 +176,16 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
             VertexConsumer vertices = bufferSource.getBuffer(RenderType.entityCutoutNoCull(blockEntity.texture()));
             int overlay = LivingEntityRenderer.getOverlayCoords(livingEntity, whiteOverlayProgress(livingRenderer, livingEntity, partialTick));
             model.renderToBuffer(poseStack, vertices, packedLight, overlay);
-            for (RenderLayer layer : layers(livingRenderer)) {
-                setLayerModelsYoung(layer, young);
+            for (RenderLayer layer : renderLayers) {
+                LayerModelAccess layerAccess = layerModels.get(layer);
+                layerAccess.setYoung(young);
                 if (MobRagdollLayerRenderer.renderHeldItemLayer(layer, model, blockEntity, livingEntity, poseStack, bufferSource, packedLight)) {
                     continue;
                 }
                 if (MobRagdollLayerRenderer.renderDirectLayerModels(layer, model, keepNames, young, poseStack, bufferSource, packedLight)) {
                     continue;
                 }
-                List<NamedModelPart> layerParts = collectLayerModelParts(layer);
+                List<NamedModelPart> layerParts = layerAccess.namedParts();
                 if (!layerParts.isEmpty()) {
                     if (layerParts.stream().noneMatch(p -> MobRagdollModelParts.matchesKeepNames(p.names(), keepNames))) {
                         continue;
@@ -187,10 +203,10 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
                         }
                     }
                     try {
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                         layer.render(poseStack, bufferSource, packedLight, livingEntity, 0.0F, 0.0F, RAGDOLL_ANIMATION_TIME, RAGDOLL_ANIMATION_TIME, 0.0F, 0.0F);
                     } finally {
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                         for (SavedPart partPose : layerSaved) {
                             partPose.restore();
                         }
@@ -208,13 +224,13 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
                         } else if (role != MobPartRole.TORSO) {
                             continue;
                         }
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                         layer.render(poseStack, bufferSource, packedLight, livingEntity, 0.0F, 0.0F, RAGDOLL_ANIMATION_TIME, RAGDOLL_ANIMATION_TIME, 0.0F, 0.0F);
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                     } else {
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                         layer.render(poseStack, bufferSource, packedLight, livingEntity, 0.0F, 0.0F, RAGDOLL_ANIMATION_TIME, RAGDOLL_ANIMATION_TIME, 0.0F, 0.0F);
-                        setLayerModelsYoung(layer, young);
+                        layerAccess.setYoung(young);
                     }
                 }
             }
@@ -229,8 +245,11 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
                 partPose.restore();
             }
             setModelYoung(model, false);
-            for (RenderLayer layer : layers(livingRenderer)) {
-                setLayerModelsYoung(layer, false);
+            for (RenderLayer layer : renderLayers) {
+                layerModels.get(layer).setYoung(false);
+            }
+            for (int i = vanillaSessions.size() - 1; i >= 0; i--) {
+                vanillaSessions.get(i).close();
             }
             if (wasInvisible) livingEntity.setInvisible(true);
         }
@@ -358,8 +377,11 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
         return false;
     }
 
-    private static List<NamedModelPart> collectLayerModelParts(RenderLayer<?, ?> layer) {
-        List<NamedModelPart> parts = new ArrayList<>();
+    private static LayerModelAccess inspectLayerModels(RenderLayer<?, ?> layer) {
+        List<EntityModel<?>> models = new ArrayList<>();
+        List<ModelPart> modelParts = new ArrayList<>();
+        Set<EntityModel<?>> seenModels = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
+        Set<ModelPart> seenParts = java.util.Collections.newSetFromMap(new IdentityHashMap<>());
         for (Class<?> type = layer.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
             for (Field field : type.getDeclaredFields()) {
                 if (!ModelPart.class.isAssignableFrom(field.getType())
@@ -369,16 +391,16 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
                 field.setAccessible(true);
                 try {
                     Object value = field.get(layer);
-                    if (value instanceof EntityModel<?> model) {
-                        parts.addAll(MobRagdollModelParts.collectNamedParts(model));
-                    } else if (value instanceof ModelPart modelPart) {
-                        parts.addAll(MobRagdollModelParts.collectNamedParts(modelPart));
+                    if (value instanceof EntityModel<?> model && seenModels.add(model)) {
+                        models.add(model);
+                    } else if (value instanceof ModelPart modelPart && seenParts.add(modelPart)) {
+                        modelParts.add(modelPart);
                     }
                 } catch (IllegalAccessException ignored) {
                 }
             }
         }
-        return List.copyOf(parts);
+        return new LayerModelAccess(List.copyOf(models), List.copyOf(modelParts));
     }
 
     private static CompoundTag sanitizedVariantData(CompoundTag variantData) {
@@ -387,24 +409,6 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
         copy.remove("ForcedAge");
         copy.remove("InLove");
         return copy;
-    }
-
-    private static void setLayerModelsYoung(RenderLayer<?, ?> layer, boolean young) {
-        for (Class<?> type = layer.getClass(); type != null && type != Object.class; type = type.getSuperclass()) {
-            for (Field field : type.getDeclaredFields()) {
-                if (!EntityModel.class.isAssignableFrom(field.getType())) {
-                    continue;
-                }
-                field.setAccessible(true);
-                try {
-                    Object value = field.get(layer);
-                    if (value instanceof EntityModel<?> model) {
-                        setModelYoung(model, young);
-                    }
-                } catch (IllegalAccessException ignored) {
-                }
-            }
-        }
     }
 
     private static void setModelYoung(EntityModel<?> model, boolean young) {
@@ -446,6 +450,25 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
     }
 
     private record Bounds(float minX, float minY, float minZ, float maxX, float maxY, float maxZ) {
+    }
+
+    private record LayerModelAccess(List<EntityModel<?>> models, List<ModelPart> modelParts) {
+        List<NamedModelPart> namedParts() {
+            List<NamedModelPart> parts = new ArrayList<>();
+            for (EntityModel<?> model : this.models) {
+                parts.addAll(MobRagdollModelParts.collectNamedParts(model));
+            }
+            for (ModelPart modelPart : this.modelParts) {
+                parts.addAll(MobRagdollModelParts.collectNamedParts(modelPart));
+            }
+            return List.copyOf(parts);
+        }
+
+        void setYoung(boolean young) {
+            for (EntityModel<?> model : this.models) {
+                setModelYoung(model, young);
+            }
+        }
     }
 
 }

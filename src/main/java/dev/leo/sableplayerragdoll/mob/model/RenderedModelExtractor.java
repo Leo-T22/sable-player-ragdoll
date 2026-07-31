@@ -110,41 +110,18 @@ public final class RenderedModelExtractor {
     }
 
     private static List<TexturedQuad> capturePartQuads(ModelPart part, PoseStack parentPose, boolean animated) {
-        if (cubes(part).isEmpty()) {
+        List<ModelPart.Cube> cubes = cubes(part);
+        if (cubes.isEmpty() || part.skipDraw) {
             return List.of();
         }
 
         PoseStack poseStack = copyPoseStack(parentPose);
-        Map<String, ModelPart> savedChildren = children(part);
-        PartPose savedPose = PartPose.offsetAndRotation(part.x, part.y, part.z, part.xRot, part.yRot, part.zRot);
-        try {
-            MODEL_PART_CHILDREN.set(part, Map.of());
-            if (!animated) {
-                PartPose initial = part.getInitialPose();
-                part.x = initial.x;
-                part.y = initial.y;
-                part.z = initial.z;
-                part.xRot = initial.xRot;
-                part.yRot = initial.yRot;
-                part.zRot = initial.zRot;
-            }
-            CapturingVertexConsumer consumer = new CapturingVertexConsumer();
-            part.render(poseStack, consumer, 0xF000F0, 0);
-            return consumer.quads();
-        } catch (IllegalAccessException ignored) {
-            return List.of();
-        } finally {
-            try {
-                MODEL_PART_CHILDREN.set(part, savedChildren);
-            } catch (IllegalAccessException ignored) {
-            }
-            part.x = savedPose.x;
-            part.y = savedPose.y;
-            part.z = savedPose.z;
-            part.xRot = savedPose.xRot;
-            part.yRot = savedPose.yRot;
-            part.zRot = savedPose.zRot;
+        applyPose(poseStack, part, animated);
+        CapturingVertexConsumer consumer = new CapturingVertexConsumer();
+        for (ModelPart.Cube cube : cubes) {
+            cube.compile(poseStack.last(), consumer, 0xF000F0, 0, -1);
         }
+        return consumer.quads();
     }
 
     private static PoseStack copyPoseStack(PoseStack source) {
@@ -189,6 +166,9 @@ public final class RenderedModelExtractor {
         poseStack.translate(x / 16.0F, y / 16.0F, z / 16.0F);
         if (xRot != 0.0F || yRot != 0.0F || zRot != 0.0F) {
             poseStack.mulPose(new org.joml.Quaternionf().rotationZYX(zRot, yRot, xRot));
+        }
+        if (part.xScale != 1.0F || part.yScale != 1.0F || part.zScale != 1.0F) {
+            poseStack.scale(part.xScale, part.yScale, part.zScale);
         }
     }
 
@@ -478,6 +458,34 @@ public final class RenderedModelExtractor {
                 this.vertices.clear();
             }
             return this;
+        }
+
+        @Override
+        public void addVertex(
+                float x,
+                float y,
+                float z,
+                int color,
+                float u,
+                float v,
+                int packedOverlay,
+                int packedLight,
+                float normalX,
+                float normalY,
+                float normalZ
+        ) {
+            this.normalX = normalX;
+            this.normalY = normalY;
+            this.normalZ = normalZ;
+            this.vertices.add(new Vertex(x * 16.0F, y * 16.0F, z * 16.0F, u, v));
+            if (this.vertices.size() == 4) {
+                this.quads.add(new TexturedQuad(
+                        List.copyOf(this.vertices),
+                        this.normalX,
+                        this.normalY,
+                        this.normalZ));
+                this.vertices.clear();
+            }
         }
 
         @Override

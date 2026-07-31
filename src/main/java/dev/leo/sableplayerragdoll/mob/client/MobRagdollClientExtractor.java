@@ -55,12 +55,18 @@ public final class MobRagdollClientExtractor {
         float headPitch = livingEntity.getXRot();
         EntityModel rawModel = model;
         rawModel.young = livingEntity.isBaby();
-        rawModel.prepareMobModel(livingEntity, limbSwing, limbSwingAmount, 0.0F);
-        rawModel.setupAnim(livingEntity, limbSwing, limbSwingAmount, (float) livingEntity.tickCount, headYaw, headPitch);
 
-        ExtractedMobModel extracted = RenderedModelExtractor.extract(model);
+        ExtractedMobModel extracted;
+        ExtractedMobModel animated;
+        try (EmfVanillaModelCompat.Session ignored = EmfVanillaModelCompat.enter(model)) {
+            rawModel.prepareMobModel(livingEntity, limbSwing, limbSwingAmount, 0.0F);
+            rawModel.setupAnim(livingEntity, limbSwing, limbSwingAmount, (float) livingEntity.tickCount, headYaw, headPitch);
 
-        Map<String, ExtractedMobModel.ExtractedPart> animatedByName = RenderedModelExtractor.extractAnimated(model)
+            extracted = RenderedModelExtractor.extract(model);
+            animated = RenderedModelExtractor.extractAnimated(model);
+        }
+
+        Map<String, ExtractedMobModel.ExtractedPart> animatedByName = animated
                 .parts().stream()
                 .collect(Collectors.toMap(ExtractedMobModel.ExtractedPart::name, p -> p));
 

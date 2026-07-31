@@ -7,6 +7,7 @@ import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.entity.RagdollDollEntity;
 import dev.leo.sableplayerragdoll.entity.RagdollSeatEntity;
+import dev.leo.sableplayerragdoll.mob.client.EmfVanillaModelCompat;
 import net.minecraft.client.CameraType;
 import dev.leo.sableplayerragdoll.neoforge.mixin.LivingEntityRendererAccessor;
 import java.util.EnumSet;
@@ -78,22 +79,24 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
       }
       PlayerSkin skin = this.skin(blockEntity);
       this.model = skin.model() == PlayerSkin.Model.SLIM ? this.slimModel : this.defaultModel;
-      this.currentTexture = skin.texture();
-      this.currentCapeTexture = skin.capeTexture();
-      this.showOnly(bodyPart);
-      this.renderEntity(blockEntity); // keep renderEntity up-to-date for elytra/cape
-      LivingEntity entity = this.getRenderEntity(blockEntity);
+      try (EmfVanillaModelCompat.Session ignored = EmfVanillaModelCompat.enter(this.model)) {
+         this.currentTexture = skin.texture();
+         this.currentCapeTexture = skin.capeTexture();
+         this.showOnly(bodyPart);
+         this.renderEntity(blockEntity); // keep renderEntity up-to-date for elytra/cape
+         LivingEntity entity = this.getRenderEntity(blockEntity);
 
-      activeModel = this.model;
-      activeBodyPart = bodyPart;
-      try {
-         poseStack.pushPose();
-         this.positionPart(bodyPart, poseStack);
-         this.renderLayers(blockEntity, bodyPart, entity, poseStack, buffer, packedLight, partialTick);
-         poseStack.popPose();
-      } finally {
-         activeModel = null;
-         activeBodyPart = null;
+         activeModel = this.model;
+         activeBodyPart = bodyPart;
+         try {
+            poseStack.pushPose();
+            this.positionPart(bodyPart, poseStack);
+            this.renderLayers(blockEntity, bodyPart, entity, poseStack, buffer, packedLight, partialTick);
+            poseStack.popPose();
+         } finally {
+            activeModel = null;
+            activeBodyPart = null;
+         }
       }
    }
 

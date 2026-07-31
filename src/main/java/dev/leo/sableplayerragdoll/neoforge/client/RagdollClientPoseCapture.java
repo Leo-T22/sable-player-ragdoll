@@ -3,6 +3,7 @@ package dev.leo.sableplayerragdoll.neoforge.client;
 import dev.leo.sableplayerragdoll.api.RagdollLimbConfig;
 import dev.leo.sableplayerragdoll.api.RagdollLimbOptions;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
+import dev.leo.sableplayerragdoll.mob.client.EmfVanillaModelCompat;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.model.PlayerModel;
 import net.minecraft.client.model.geom.ModelPart;
@@ -33,17 +34,19 @@ public final class RagdollClientPoseCapture {
       float limbSwingAmount = Math.min(player.walkAnimation.speed(partialTick), 1.0F);
 
       PlayerModel<AbstractClientPlayer> model = playerRenderer.getModel();
-      model.prepareMobModel(player, limbSwing, limbSwingAmount, partialTick);
-      model.setupAnim(player, limbSwing, limbSwingAmount, (float) player.tickCount, player.getYHeadRot() - player.yBodyRot, player.getXRot());
+      try (EmfVanillaModelCompat.Session ignored = EmfVanillaModelCompat.enter(model)) {
+         model.prepareMobModel(player, limbSwing, limbSwingAmount, partialTick);
+         model.setupAnim(player, limbSwing, limbSwingAmount, (float) player.tickCount, player.getYHeadRot() - player.yBodyRot, player.getXRot());
 
-      return RagdollLimbOptions.builder()
-         .limb(BodyPart.HEAD, pose(model.head))
-         .limb(BodyPart.TORSO, pose(model.body))
-         .limb(BodyPart.LEFT_ARM, pose(model.leftArm))
-         .limb(BodyPart.RIGHT_ARM, pose(model.rightArm))
-         .limb(BodyPart.LEFT_LEG, pose(model.leftLeg))
-         .limb(BodyPart.RIGHT_LEG, pose(model.rightLeg))
-         .build();
+         return RagdollLimbOptions.builder()
+            .limb(BodyPart.HEAD, pose(model.head))
+            .limb(BodyPart.TORSO, pose(model.body))
+            .limb(BodyPart.LEFT_ARM, pose(model.leftArm))
+            .limb(BodyPart.RIGHT_ARM, pose(model.rightArm))
+            .limb(BodyPart.LEFT_LEG, pose(model.leftLeg))
+            .limb(BodyPart.RIGHT_LEG, pose(model.rightLeg))
+            .build();
+      }
    }
 
    private static RagdollLimbConfig pose(ModelPart part) {
