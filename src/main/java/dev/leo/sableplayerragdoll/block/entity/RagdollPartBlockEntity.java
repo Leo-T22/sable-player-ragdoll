@@ -73,6 +73,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    private Map<String, List<ItemStack>> accessoriesItems = new LinkedHashMap<>();
    private Map<String, List<ItemStack>> accessoriesCosmeticItems = new LinkedHashMap<>();
    private Map<String, List<Boolean>> accessoriesRenderOptions = new LinkedHashMap<>();
+   private Map<String, List<ItemStack>> cosmeticArmorItems = new LinkedHashMap<>();
+   private Map<String, List<Boolean>> cosmeticArmorsRenderOptions = new LinkedHashMap<>();
    private final Map<UUID, GrabConstraint> grabbers = new HashMap<>();
 
    public RagdollPartBlockEntity(BlockPos pos, BlockState state) {
@@ -308,6 +310,23 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       this.setChanged();
    }
 
+   public void setCosmeticArmorItems(String slotName, List<ItemStack> stacks) {
+      if (stacks == null || stacks.stream().allMatch(ItemStack::isEmpty)) {
+         this.cosmeticArmorItems.remove(slotName);
+      } else {
+         this.cosmeticArmorItems.put(slotName, Collections.unmodifiableList(new ArrayList<>(stacks)));
+      }
+      this.setChanged();
+   }
+   public void setCosmeticArmorRenderOptions(String slotName, List<Boolean> options) {
+      if (options == null || options.isEmpty()) {
+         this.cosmeticArmorsRenderOptions.remove(slotName);
+      } else {
+         this.cosmeticArmorsRenderOptions.put(slotName, List.copyOf(options));
+      }
+      this.setChanged();
+   }
+
    public Map<String, List<ItemStack>> getAccessoriesItems() {
       return Collections.unmodifiableMap(this.accessoriesItems);
    }
@@ -319,9 +338,19 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    public Map<String, List<Boolean>> getAccessoriesRenderOptions() {
       return Collections.unmodifiableMap(this.accessoriesRenderOptions);
    }
+   public Map<String, List<ItemStack>> getCosmeticArmorItems() {
+      return Collections.unmodifiableMap(this.cosmeticArmorItems);
+   }
+   public Map<String, List<Boolean>> getCosmeticArmorsRenderOptions() {
+      return Collections.unmodifiableMap(this.cosmeticArmorsRenderOptions);
+   }
 
    public boolean hasAccessoriesItems() {
       return !this.accessoriesItems.isEmpty() || !this.accessoriesCosmeticItems.isEmpty() || !this.accessoriesRenderOptions.isEmpty();
+   }
+
+   public boolean hasCosmeticArmor() {
+      return !this.cosmeticArmorsRenderOptions.isEmpty() || !this.cosmeticArmorItems.isEmpty();
    }
 
    @Override
@@ -349,6 +378,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       if (!this.accessoriesItems.isEmpty()) tag.put("AccessoriesItems", saveSlotMap(this.accessoriesItems, registries));
       if (!this.accessoriesCosmeticItems.isEmpty()) tag.put("AccessoriesCosmeticItems", saveSlotMap(this.accessoriesCosmeticItems, registries));
       if (!this.accessoriesRenderOptions.isEmpty()) tag.put("AccessoriesRenderOptions", saveBooleanSlotMap(this.accessoriesRenderOptions));
+      if (!this.cosmeticArmorItems.isEmpty()) tag.put("CosmeticArmorItems", saveSlotMap(this.cosmeticArmorItems, registries));
+      if (!this.cosmeticArmorsRenderOptions.isEmpty()) tag.put("CosArmorRenderOptions", saveBooleanSlotMap(this.cosmeticArmorsRenderOptions));
    }
 
    @Override
@@ -373,6 +404,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
       loadSlotMap(tag, registries, "AccessoriesItems", this.accessoriesItems);
       loadSlotMap(tag, registries, "AccessoriesCosmeticItems", this.accessoriesCosmeticItems);
       loadBooleanSlotMap(tag, "AccessoriesRenderOptions", this.accessoriesRenderOptions);
+      loadSlotMap(tag, registries, "CosmeticArmorItems", this.cosmeticArmorItems);
+      loadBooleanSlotMap(tag, "CosArmorRenderOptions", this.cosmeticArmorsRenderOptions);
    }
 
    @Override
