@@ -1016,7 +1016,7 @@ public final class SablePlayerRagdollNeoForge {
    }
 
    private static void onPlayerDeath(LivingDeathEvent event) {
-      if (!(event.getEntity() instanceof ServerPlayer player)) return;
+      if (event.isCanceled() || !(event.getEntity() instanceof ServerPlayer player)) return;
       ServerLevel level = player.serverLevel();
       ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
       if (ragdoll == null) return;
