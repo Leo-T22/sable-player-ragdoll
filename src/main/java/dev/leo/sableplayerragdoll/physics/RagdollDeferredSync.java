@@ -109,7 +109,7 @@ public final class RagdollDeferredSync {
                   );
                } catch (Throwable var9) {
                   SablePlayerRagdoll.LOGGER.warn("[sable_player_ragdoll] launch failed for ragdoll {}: {}", entry.getKey(), var9.toString());
-                  RagdollRegistry.dropFailed(physicsSystem, serverSubLevel);
+                  RagdollRegistry.dropFailed(physicsSystem, serverSubLevel, launch.seatEntityId());
                }
                iterator.remove();
                continue;

@@ -685,6 +685,9 @@ public final class MobRagdollAssembly {
             }
             if (spawnedParts.isEmpty()) {
                 CONVERTED_ENTITIES.remove(uuid);
+                if (livingEntity != null) {
+                    showRagdollSource(livingEntity);
+                }
                 return false;
             }
 
@@ -735,6 +738,7 @@ public final class MobRagdollAssembly {
         drainSpawnQueue(level);
         runDeferredRestores(level, now);
         processPendingMobless(level, now);
+        sweepLeakedSavedRagdolls(level, now);
         SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
         if (!PENDING_LAUNCHES.isEmpty()) {
             PENDING_LAUNCHES.values().removeIf(pending -> now - pending.requestedTick() > PENDING_LAUNCH_TIMEOUT_TICKS);
@@ -833,6 +837,7 @@ public final class MobRagdollAssembly {
                     finishAssembly(level, livingEntity, pending);
                 } else {
                     CONVERTED_ENTITIES.remove(pending.entityUUID);
+                    showRagdollSource(livingEntity);
                 }
             }
         }
@@ -934,6 +939,21 @@ public final class MobRagdollAssembly {
 
         if (level.getEntity(uuid) instanceof LivingEntity living && !living.isRemoved()) {
             living.kill();
+        }
+    }
+
+    private static final int SAVED_SWEEP_INTERVAL_TICKS = 40;
+
+    private static void sweepLeakedSavedRagdolls(ServerLevel level, long now) {
+        if (now % SAVED_SWEEP_INTERVAL_TICKS != 0L) return;
+        MobRagdollSavedData savedData = MobRagdollSavedData.get(level);
+        if (savedData.entries().isEmpty()) return;
+        for (UUID uuid : List.copyOf(savedData.entries().keySet())) {
+            MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
+            if (saved == null) continue;
+            if (RAGDOLL_STATES.containsKey(uuid) || RESTORED_HANDLES.containsKey(uuid)) continue;
+            if (now - saved.spawnedAtTick() < saved.durationTicks()) continue;
+            expireSavedRagdoll(level, uuid);
         }
     }
 

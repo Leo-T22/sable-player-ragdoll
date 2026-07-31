@@ -43,6 +43,7 @@ import dev.leo.sableplayerragdoll.physics.RagdollAssemblyHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollDeferredSync;
 import dev.leo.sableplayerragdoll.physics.RagdollExpireHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollRegistry;
+import dev.leo.sableplayerragdoll.physics.RagdollSeatingHelper;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import dev.ryanhcode.sable.Sable;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
@@ -163,6 +164,7 @@ public final class SablePlayerRagdollNeoForge {
 
    private static void onServerTick(net.neoforged.neoforge.event.tick.ServerTickEvent.Post event) {
       RagdollAsyncPoseRequests.tick(uuid -> event.getServer().getPlayerList().getPlayer(uuid));
+      RagdollSeatingHelper.sweepLeakedInvisibility(event.getServer());
    }
 
    @SuppressWarnings("unchecked")

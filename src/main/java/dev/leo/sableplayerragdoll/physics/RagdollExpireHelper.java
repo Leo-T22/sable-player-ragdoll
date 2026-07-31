@@ -68,30 +68,41 @@ public final class RagdollExpireHelper {
    private static void unseatRider(ServerLevel level, ServerSubLevel subLevel, boolean placePlayerAtRagdoll) {
       UUID playerId = RagdollSessionManager.getPlayerId(subLevel);
       if (playerId != null) {
-         Entity entity = level.getEntity(playerId);
-         if (entity instanceof LivingEntity livingEntity) {
-            Vec3 releasePosition = placePlayerAtRagdoll ? releasePosition(level, subLevel) : null;
-            Vec3 inheritedVelocity = sublevelVelocityAsBlocksPerTick(level, subLevel);
-            Vec3 exitVelocity = inheritedVelocity == null ? Vec3.ZERO : inheritedVelocity;
-            if (livingEntity.isPassenger()) {
-               livingEntity.stopRiding();
-            }
-            if (releasePosition != null) {
-               if (livingEntity instanceof ServerPlayer player) {
-                  player.teleportTo(level, releasePosition.x, releasePosition.y, releasePosition.z, player.getYRot(), player.getXRot());
-               } else {
-                  livingEntity.teleportTo(releasePosition.x, releasePosition.y, releasePosition.z);
-               }
-            }
-            if (exitVelocity != Vec3.ZERO) {
-               livingEntity.setDeltaMovement(exitVelocity);
-            }
-            RagdollSeatingHelper.restoreVisibility(livingEntity);
+         releaseRider(level, subLevel, playerId, placePlayerAtRagdoll);
+      }
+   }
+
+   static void releaseFailedLaunch(ServerLevel level, ServerSubLevel subLevel, @Nullable UUID seatEntityId) {
+      if (seatEntityId != null) {
+         releaseRider(level, subLevel, seatEntityId, true);
+      }
+      discardSeatEntities(level, subLevel);
+   }
+
+   private static void releaseRider(ServerLevel level, ServerSubLevel subLevel, UUID riderId, boolean placePlayerAtRagdoll) {
+      Entity entity = level.getEntity(riderId);
+      if (entity instanceof LivingEntity livingEntity) {
+         Vec3 releasePosition = placePlayerAtRagdoll ? releasePosition(level, subLevel) : null;
+         Vec3 inheritedVelocity = sublevelVelocityAsBlocksPerTick(level, subLevel);
+         Vec3 exitVelocity = inheritedVelocity == null ? Vec3.ZERO : inheritedVelocity;
+         if (livingEntity.isPassenger()) {
+            livingEntity.stopRiding();
+         }
+         if (releasePosition != null) {
             if (livingEntity instanceof ServerPlayer player) {
-               RagdollRegistry.suppressAfterRelease(player.getUUID(), level.getGameTime());
-               RagdollSeatCallbacks.notifyReleased(player);
-               NeoForge.EVENT_BUS.post(new RagdollEndEvent(player, exitVelocity, endReason(subLevel)));
+               player.teleportTo(level, releasePosition.x, releasePosition.y, releasePosition.z, player.getYRot(), player.getXRot());
+            } else {
+               livingEntity.teleportTo(releasePosition.x, releasePosition.y, releasePosition.z);
             }
+         }
+         if (exitVelocity != Vec3.ZERO) {
+            livingEntity.setDeltaMovement(exitVelocity);
+         }
+         RagdollSeatingHelper.restoreVisibility(livingEntity);
+         if (livingEntity instanceof ServerPlayer player) {
+            RagdollRegistry.suppressAfterRelease(player.getUUID(), level.getGameTime());
+            RagdollSeatCallbacks.notifyReleased(player);
+            NeoForge.EVENT_BUS.post(new RagdollEndEvent(player, exitVelocity, endReason(subLevel)));
          }
       }
    }

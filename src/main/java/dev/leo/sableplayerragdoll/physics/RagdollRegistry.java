@@ -296,7 +296,12 @@ public final class RagdollRegistry {
    }
 
    static void dropFailed(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
+      dropFailed(physicsSystem, subLevel, null);
+   }
+
+   static void dropFailed(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel, @Nullable UUID seatEntityId) {
       if (subLevel != null && !subLevel.isRemoved()) {
+         RagdollExpireHelper.releaseFailedLaunch(physicsSystem.getLevel(), subLevel, seatEntityId);
          RagdollSessionManager.unregister(subLevel);
          untrack(subLevel.getUniqueId());
          RagdollDeferredSync.cancel(subLevel.getUniqueId());
@@ -417,6 +422,8 @@ public final class RagdollRegistry {
    public static void resetState() {
       RAGDOLL_BODY_IDS.clear();
       PLAYER_COOLDOWNS.clear();
+      LAUNCH_RESERVATIONS.clear();
+      RagdollSeatingHelper.resetState();
       RagdollAssemblyHelper.resetState();
    }
 
