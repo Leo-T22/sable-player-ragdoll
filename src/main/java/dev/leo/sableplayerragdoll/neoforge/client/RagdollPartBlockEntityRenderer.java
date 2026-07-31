@@ -202,6 +202,11 @@ public final class RagdollPartBlockEntityRenderer implements BlockEntityRenderer
             AccessoriesRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick);
          }
       }
+      if (ModList.get().isLoaded("cosmeticarmorreworkedforked")) {
+         if (blockEntity.hasAccessoriesItems()) {
+            CosArmorRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick, playerRenderer);
+         }
+      }
       if (ModList.get().isLoaded("curios")) {
          if (blockEntity.hasCurioItems()) {
             CuriosRenderHelper.renderFromStored(bodyPart, blockEntity, entity, this, poseStack, buffer, packedLight, partialTick);
