@@ -7,6 +7,6 @@ Full documentation lives in the [project wiki](https://github.com/Leo-T22/sable-
 
 ## License
 
-All rights reserved. Do not redistribute.
+Licensed under the [Apache License, Version 2.0](LICENSE).
 
-See [LICENSE](LICENSE) for the full license text.
+See [NOTICE](NOTICE) for attribution and trademark information.
