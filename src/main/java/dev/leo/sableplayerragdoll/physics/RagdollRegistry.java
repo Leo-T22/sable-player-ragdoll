@@ -179,6 +179,19 @@ public final class RagdollRegistry {
    public static ServerSubLevel detachActiveToPlayerless(ServerLevel level, UUID playerId, PlayerlessDespawnRule rule) {
       ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(level, playerId);
       if (body == null) return null;
+
+      // Reposition the player back into the real world BEFORE detachPlayer(), because
+      // detachPlayer() clears the playerId <-> ragdoll association, and after that
+      // we'd have no way to know who to return the position to.
+      ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
+      if (player != null && player.isPassenger() && body.getPlot() != null) {
+         Vec3 releasePos = Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(body.getPlot().getCenterBlock()));
+         if (releasePos != null) {
+            player.stopRiding();
+            player.teleportTo(level, releasePos.x, releasePos.y, releasePos.z, player.getYRot(), player.getXRot());
+         }
+      }
+
       RagdollSessionManager.detachPlayer(body, rule, level.getGameTime());
       RagdollExpireHelper.unseatPlayerSilently(level, playerId);
       Map<BodyPart, UUID> partMap = RagdollAssemblyHelper.linkedPartsAsMap(body.getUniqueId());
