@@ -1,5 +1,8 @@
 package dev.leo.sableplayerragdoll.api;
 
+import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
+import dev.leo.sableplayerragdoll.physics.RagdollBlockOwnership;
+
 import com.mojang.authlib.GameProfile;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
@@ -84,7 +87,7 @@ public final class RagdollAPI {
          RagdollWailingOptions w = resolvedOptions.wailing();
          RagdollMotorEffects.applyWailing(level, body, w.stiffness(), w.durationTicks(), w.intervalTicks(), w.startDelayTicks());
       }
-      return new ActiveRagdollSession(player, body, level.getGameTime(), resolvedOptions.despawnConditions());
+      return new ActiveRagdollSession(player, body, level.getGameTime(), resolvedOptions.despawnConditions(), RagdollBlockOwnership.sessionId(body));
    }
 
    @Nullable
@@ -140,7 +143,7 @@ public final class RagdollAPI {
       RagdollLimbOptions resolvedLimbs = limbs == null ? RagdollLimbOptions.defaults() : limbs;
       ServerSubLevel body = RagdollRegistry.spawnPlayerless(level, position, heading, profile, linear, new Vector3d(), despawnRule, resolvedLimbs);
       if (body == null) return null;
-      return new ActivePlayerlessRagdollSession(level, body, level.getGameTime());
+      return new ActivePlayerlessRagdollSession(level, body, level.getGameTime(), RagdollBlockOwnership.sessionId(body));
    }
 
    @Nullable
@@ -149,7 +152,7 @@ public final class RagdollAPI {
       PlayerlessDespawnRule resolved = rule != null ? rule : PlayerlessDespawnRule.never();
       ServerSubLevel body = RagdollRegistry.detachActiveToPlayerless(level, player.getUUID(), resolved);
       if (body == null) return null;
-      return new ActivePlayerlessRagdollSession(level, body, level.getGameTime());
+      return new ActivePlayerlessRagdollSession(level, body, level.getGameTime(), RagdollBlockOwnership.sessionId(body));
    }
 
    public static boolean remove(ServerLevel level, UUID subLevelId) {
@@ -174,19 +177,16 @@ public final class RagdollAPI {
    public static RagdollSession activeSession(ServerPlayer player) {
       ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID());
       if (body == null) return null;
-      return new ActiveRagdollSession(player, body, -1L, List.of());
+      return new ActiveRagdollSession(player, body, -1L, List.of(), RagdollBlockOwnership.ownerForPlayer(player.serverLevel(), player.getUUID()));
    }
 
    public static boolean isRagdolled(ServerPlayer player) {
       return RagdollSessionManager.activeRagdollForPlayer(player.serverLevel(), player.getUUID()) != null;
    }
 
-   public static boolean isRagdollSubLevel(UUID subLevelId) {
-      return RagdollAssemblyHelper.isRagdollPart(subLevelId);
-   }
-
    public static boolean isRagdollSubLevel(SubLevel subLevel) {
-      return RagdollAssemblyHelper.isRagdollPart(subLevel.getUniqueId());
+      return subLevel.getLevel() instanceof ServerLevel level
+         && RagdollAssemblyHelper.isRagdollPart(level, subLevel.getUniqueId());
    }
 
    public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
@@ -280,7 +280,7 @@ public final class RagdollAPI {
       }
    }
 
-   private record ActiveRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long startGameTime, List<DespawnCondition> customConditions)
+   private record ActiveRagdollSession(ServerPlayer player, ServerSubLevel subLevel, long startGameTime, List<DespawnCondition> customConditions, UUID owner)
          implements RagdollSession {
 
       @Override
@@ -323,14 +323,15 @@ public final class RagdollAPI {
       @Override
       public void release() {
          ServerLevel level = player.serverLevel();
-         SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-         if (physicsSystem != null && !subLevel.isRemoved()) {
-            RagdollExpireHelper.expireImmediate(physicsSystem, level, subLevel, "api release");
+         var root = RagdollBlockOwnership.root(level, owner);
+         if (root != null) {
+            RagdollBlockOwnership.withOwner(owner, () ->
+                  RagdollExpireHelper.expire(level, root, "api release"));
          }
       }
    }
 
-   private record ActivePlayerlessRagdollSession(ServerLevel level, ServerSubLevel subLevel, long startGameTime) implements PlayerlessRagdollSession {
+   private record ActivePlayerlessRagdollSession(ServerLevel level, ServerSubLevel subLevel, long startGameTime, UUID owner) implements PlayerlessRagdollSession {
 
       @Override
       public UUID id() {
@@ -365,9 +366,10 @@ public final class RagdollAPI {
 
       @Override
       public void release() {
-         SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-         if (physicsSystem != null && !subLevel.isRemoved()) {
-            RagdollExpireHelper.expireImmediate(physicsSystem, level, subLevel, "api playerless release");
+         var root = RagdollBlockOwnership.root(level, owner);
+         if (root != null) {
+            RagdollBlockOwnership.withOwner(owner, () ->
+                  RagdollExpireHelper.expire(level, root, "api playerless release"));
          }
       }
    }

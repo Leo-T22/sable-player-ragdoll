@@ -1,5 +1,10 @@
 package dev.leo.sableplayerragdoll.mob;
 
+import dev.leo.sableplayerragdoll.physics.RagdollBlockLifetime;
+import dev.leo.sableplayerragdoll.physics.RagdollBlockOwnership;
+import dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock;
+import dev.leo.sableplayerragdoll.physics.RagdollRegistry;
+
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.mob.block.MobPartRole;
 import dev.leo.sableplayerragdoll.mob.block.MobRagdollPartBlock;
@@ -14,7 +19,7 @@ import dev.leo.sableplayerragdoll.api.RagdollLaunchOptions;
 import dev.leo.sableplayerragdoll.api.RagdollLimbOptions;
 import dev.leo.sableplayerragdoll.api.RagdollPoseSnapshot;
 import dev.leo.sableplayerragdoll.physics.SableConstraintCompat;
-import dev.leo.sableplayerragdoll.physics.SubLevelEntityDetachHelper;
+import dev.leo.sableplayerragdoll.physics.RagdollCleanup;
 import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintConfiguration;
@@ -24,7 +29,6 @@ import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3i;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
-import dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -33,7 +37,6 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Collection;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -70,8 +73,8 @@ public final class MobRagdollAssembly {
     private static final Map<UUID, Float> CLIENT_BODY_YAW = new ConcurrentHashMap<>();
     private static final Map<UUID, Integer> GRAB_COUNTS = new ConcurrentHashMap<>();
     private static final Map<UUID, Long> GRAB_PROTECTED_UNTIL = new ConcurrentHashMap<>();
-    private static final Map<UUID, Long> DEFERRED_RESTORE_AT = new ConcurrentHashMap<>();
-    private static final Map<UUID, MobRagdollEndEvent.Reason> DEFERRED_RESTORE_REASON = new ConcurrentHashMap<>();
+    private record DeferredRestore(ServerLevel level, long tick, MobRagdollEndEvent.Reason reason) {}
+    private static final Map<UUID, DeferredRestore> DEFERRED_RESTORES = new ConcurrentHashMap<>();
     private static final Map<UUID, PhysicsConstraintHandle> JOINT_BY_CHILD = new ConcurrentHashMap<>();
     private static final Map<UUID, PendingMobless> PENDING_MOBLESS = new ConcurrentHashMap<>();
     private static final int MOBLESS_DETACH_TIMEOUT_TICKS = 60;
@@ -100,8 +103,7 @@ public final class MobRagdollAssembly {
         LAST_VELOCITIES.clear();
         GRAB_COUNTS.clear();
         GRAB_PROTECTED_UNTIL.clear();
-        DEFERRED_RESTORE_AT.clear();
-        DEFERRED_RESTORE_REASON.clear();
+        DEFERRED_RESTORES.clear();
         PENDING_MOBLESS.clear();
         JOINT_BY_CHILD.clear();
     }
@@ -179,7 +181,7 @@ public final class MobRagdollAssembly {
             return false;
         }
         MobRagdollLaunchOptions resolved = options == null ? MobRagdollLaunchOptions.defaults() : options;
-        PENDING_LAUNCHES.put(uuid, new PendingLaunch(startEvent.velocity(), angular, resolved, level.getGameTime()));
+        PENDING_LAUNCHES.put(uuid, new PendingLaunch(startEvent.velocity(), angular, resolved, level.getGameTime(), level));
         PacketDistributor.sendToPlayersTrackingEntity(entity, new MobRagdollLaunchRequestPacket(entity.getId()));
         return true;
     }
@@ -228,6 +230,13 @@ public final class MobRagdollAssembly {
             UUID uuid = e.getKey();
             if (CONVERTED_ENTITIES.contains(uuid) && MobRagdollSavedData.get(level).getEntry(uuid) != null) {
                 MobRagdollSavedData.get(level).markMobless(uuid);
+                for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+                    var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+                    if (uuid.equals(identity.source())) {
+                        identity.lifetime(identity.createdAt(), "TIMED", null, identity.expiresAt());
+                        be.setChanged();
+                    }
+                }
                 if (level.getEntity(uuid) instanceof Entity ent) {
                     ent.discard();
                 }
@@ -242,16 +251,38 @@ public final class MobRagdollAssembly {
         }
     }
 
-    private static boolean isMobless(ServerLevel level, UUID uuid) {
-        MobRagdollSavedData.Entry entry = MobRagdollSavedData.get(level).getEntry(uuid);
-        return entry != null && entry.mobless();
+    public static UUID savedOwnerForPart(ServerLevel level, UUID partId) {
+        for (var entry : MobRagdollSavedData.get(level).entries().entrySet()) {
+            if (entry.getValue().partIds().containsValue(partId)) return entry.getKey();
+        }
+        return null;
+    }
+
+    public static boolean releaseForExternalRemoval(ServerLevel level, UUID partId) {
+        for (PendingAssembly pending : List.copyOf(SPAWN_QUEUE)) {
+            if (pending.level != level) continue;
+            if (pending.assembled.stream().anyMatch(part -> part.subLevel().getUniqueId().equals(partId))) {
+                SPAWN_QUEUE.remove(pending);
+                CONVERTED_ENTITIES.remove(pending.entityUUID);
+                cleanupPartialAssembly(level, pending);
+                return true;
+            }
+        }
+        UUID owner = savedOwnerForPart(level, partId);
+        if (owner == null) {
+            owner = ownerUuidForSubLevel(partId);
+            if (owner == null || !ownsRagdoll(RAGDOLL_STATES.get(owner), level)) return false;
+        }
+        clearRestoreDeferral(owner);
+        expireSavedRagdoll(level, owner, MobRagdollEndEvent.Reason.RELEASED);
+        return true;
     }
 
     public static boolean removeBySubLevel(ServerLevel level, UUID subLevelId, boolean smokePuff) {
         if (smokePuff) {
             SubLevelContainer container = SubLevelContainer.getContainer(level);
             if (container != null && container.getSubLevel(subLevelId) instanceof ServerSubLevel ssl) {
-                dev.leo.sableplayerragdoll.physics.RagdollRegistry.emitRemovalPuff(level, ssl);
+                RagdollRegistry.emitRemovalPuff(level, ssl);
             }
         }
         UUID owner = ownerUuidForSubLevel(subLevelId);
@@ -285,6 +316,7 @@ public final class MobRagdollAssembly {
         List<SpawnedPart> remaining = new ArrayList<>(state.parts());
         remaining.remove(target);
         RAGDOLL_STATES.put(owner, new RagdollState(List.copyOf(remaining), state.spawnedAtTick(), state.preRagdollPos(), state.durationTicks()));
+        RagdollBlockOwnership.sever(level, subLevelId);
         MobRagdollSavedData.get(level).removePart(owner, subLevelId);
         return subLevelId;
     }
@@ -308,6 +340,11 @@ public final class MobRagdollAssembly {
     }
 
     private static boolean removeLooseSubLevel(ServerLevel level, UUID subLevelId) {
+        if (RagdollBlockOwnership.hasLimb(level, subLevelId)) {
+            removeJoint(subLevelId);
+            RagdollCleanup.removeLimb(level, subLevelId);
+            return true;
+        }
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         if (container == null || !(container.getSubLevel(subLevelId) instanceof ServerSubLevel subLevel) || subLevel.isRemoved()) {
             return false;
@@ -316,9 +353,19 @@ public final class MobRagdollAssembly {
         if (!(subLevel.getLevel().getBlockState(center).getBlock() instanceof MobRagdollPartBlock)) {
             return false;
         }
-        JOINT_BY_CHILD.remove(subLevelId);
+        removeJoint(subLevelId);
         removeSubLevelIfPresent(container, subLevel);
         return true;
+    }
+
+    private static void removeJoint(UUID limb) {
+        PhysicsConstraintHandle handle = JOINT_BY_CHILD.remove(limb);
+        if (handle != null && handle.isValid()) handle.remove();
+    }
+
+    private static UUID limbId(SpawnedPart part) {
+        return RagdollBlockOwnership.limbAt(
+                part.subLevel().getLevel(), part.plotPos(), part.subLevel().getUniqueId());
     }
 
     private static void forgetJoints(RagdollState state) {
@@ -327,7 +374,7 @@ public final class MobRagdollAssembly {
         }
         for (SpawnedPart part : state.parts()) {
             if (part.subLevel() != null) {
-                JOINT_BY_CHILD.remove(part.subLevel().getUniqueId());
+                removeJoint(limbId(part));
             }
         }
     }
@@ -396,7 +443,7 @@ public final class MobRagdollAssembly {
         MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         if (saved != null) {
-            removeSavedSubLevels(container, saved);
+            removeSavedSubLevels(level, container, saved);
         }
         savedData.removeEntry(uuid);
         if (state != null) {
@@ -404,7 +451,7 @@ public final class MobRagdollAssembly {
                 ServerSubLevel subLevel = spawned.subLevel();
                 LAST_VELOCITIES.remove(subLevel);
                 if (subLevel != null && !subLevel.isRemoved()) {
-                    removeSubLevelIfPresent(container, subLevel);
+                    if (saved == null) RagdollCleanup.removeLimb(level, limbId(spawned));
                 }
             }
         }
@@ -441,10 +488,11 @@ public final class MobRagdollAssembly {
 
     public static void markReleased(ServerLevel level, UUID uuid) {
         GRAB_COUNTS.computeIfPresent(uuid, (ignored, count) -> count <= 1 ? null : count - 1);
-        if (!GRAB_COUNTS.containsKey(uuid) && DEFERRED_RESTORE_REASON.containsKey(uuid)) {
+        if (!GRAB_COUNTS.containsKey(uuid) && DEFERRED_RESTORES.containsKey(uuid)) {
             long now = level.getGameTime();
             long protectedUntil = GRAB_PROTECTED_UNTIL.getOrDefault(uuid, now);
-            DEFERRED_RESTORE_AT.put(uuid, Math.max(now + DEFERRED_RESTORE_AFTER_RELEASE_TICKS, protectedUntil));
+            DEFERRED_RESTORES.computeIfPresent(uuid, (ignored, deferred) -> new DeferredRestore(
+                    deferred.level(), Math.max(now + DEFERRED_RESTORE_AFTER_RELEASE_TICKS, protectedUntil), deferred.reason()));
         }
     }
 
@@ -455,20 +503,19 @@ public final class MobRagdollAssembly {
             return false;
         }
 
-        DEFERRED_RESTORE_REASON.put(uuid, reason);
-        DEFERRED_RESTORE_AT.put(uuid, protectedUntil);
+        DEFERRED_RESTORES.put(uuid, new DeferredRestore(level, protectedUntil, reason));
         return true;
     }
 
     private static void runDeferredRestores(ServerLevel level, long now) {
         List<UUID> due = new ArrayList<>();
-        for (var entry : DEFERRED_RESTORE_AT.entrySet()) {
-            if (entry.getValue() <= now) {
+        for (var entry : DEFERRED_RESTORES.entrySet()) {
+            if (entry.getValue().level() == level && entry.getValue().tick() <= now) {
                 due.add(entry.getKey());
             }
         }
         for (UUID uuid : due) {
-            MobRagdollEndEvent.Reason reason = DEFERRED_RESTORE_REASON.getOrDefault(uuid, MobRagdollEndEvent.Reason.RELEASED);
+            MobRagdollEndEvent.Reason reason = DEFERRED_RESTORES.get(uuid).reason();
             clearRestoreDeferral(uuid);
             if (level.getEntity(uuid) instanceof LivingEntity livingEntity) {
                 despawn(level, livingEntity, reason);
@@ -483,8 +530,7 @@ public final class MobRagdollAssembly {
     private static void clearRestoreDeferral(UUID uuid) {
         GRAB_COUNTS.remove(uuid);
         GRAB_PROTECTED_UNTIL.remove(uuid);
-        DEFERRED_RESTORE_AT.remove(uuid);
-        DEFERRED_RESTORE_REASON.remove(uuid);
+        DEFERRED_RESTORES.remove(uuid);
     }
 
     private static void hideRagdollSource(LivingEntity entity) {
@@ -498,6 +544,7 @@ public final class MobRagdollAssembly {
 
 
     private static void showRagdollSource(LivingEntity entity) {
+        entity.getPersistentData().remove(RagdollBlockLifetime.SOURCE_SESSION);
         if (entity instanceof Mob mob) {
             mob.setNoAi(false);
         }
@@ -626,10 +673,14 @@ public final class MobRagdollAssembly {
                 continue;
             }
             PhysicsConstraintHandle existingHandle = RESTORED_HANDLES.get(uuid);
-            if (existingHandle != null || RAGDOLL_STATES.containsKey(uuid)) {
+            var existingState = RAGDOLL_STATES.get(uuid);
+            if (existingState != null && existingState.parts().stream().allMatch(part -> !part.subLevel().isRemoved())
+                    && (existingHandle == null || existingHandle.isValid())) {
                 RESTORED_UUIDS.add(uuid);
                 continue;
             }
+            forgetJoints(existingState);
+            RAGDOLL_STATES.remove(uuid);
             RESTORED_UUIDS.remove(uuid);
             RESTORED_HANDLES.remove(uuid);
 
@@ -656,7 +707,9 @@ public final class MobRagdollAssembly {
                     missingSubLevels++;
                     continue;
                 }
-                SubLevel subLevel = serverContainer.getSubLevel(subLevelId);
+                var block = RagdollBlockOwnership.findLimb(level, subLevelId);
+                SubLevel subLevel = block == null ? serverContainer.getSubLevel(subLevelId)
+                        : dev.ryanhcode.sable.Sable.HELPER.getContaining(level, block.getBlockPos());
                 if (!(subLevel instanceof ServerSubLevel sl) || sl.isRemoved()) {
                     missingSubLevels++;
                     continue;
@@ -673,7 +726,7 @@ public final class MobRagdollAssembly {
                         0.0F, 0.0F, 0.0F, 1.0F,
                         8.0F, 8.0F, 8.0F,
                         "", List.of());
-                BlockPos plotPos = sl.getPlot().getCenterBlock();
+                BlockPos plotPos = block == null ? sl.getPlot().getCenterBlock() : block.getBlockPos();
                 Vec3 worldCenter = sl.logicalPose().transformPosition(Vec3.atCenterOf(plotPos));
                 spawnedParts.add(new SpawnedPart(ps, sl, worldCenter, plotPos, new Vec3(1.0, 0.0, 0.0), new Vec3(0.0, 0.0, 1.0)));
             }
@@ -691,6 +744,7 @@ public final class MobRagdollAssembly {
                 return false;
             }
 
+            savedData.putEntry(uuid, saved);
             JointResult joints = attachJoints(level, spawnedParts);
             if (livingEntity != null) {
                 hideRagdollSource(livingEntity);
@@ -738,55 +792,32 @@ public final class MobRagdollAssembly {
         drainSpawnQueue(level);
         runDeferredRestores(level, now);
         processPendingMobless(level, now);
-        sweepLeakedSavedRagdolls(level, now);
-        SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-        if (!PENDING_LAUNCHES.isEmpty()) {
-            PENDING_LAUNCHES.values().removeIf(pending -> now - pending.requestedTick() > PENDING_LAUNCH_TIMEOUT_TICKS);
-        }
-        List<UUID> expired = new ArrayList<>();
-        List<UUID> deadSources = new ArrayList<>();
+        PENDING_LAUNCHES.values().removeIf(pending -> pending.level() == level
+                && now - pending.requestedTick() > PENDING_LAUNCH_TIMEOUT_TICKS);
+        var physics = SubLevelPhysicsSystem.get(level);
+        // Runtime state drives the hidden source and impact feedback only. Blocks decide expiry.
         for (var entry : RAGDOLL_STATES.entrySet()) {
-            RagdollState state = entry.getValue();
-            if (!ownsRagdoll(state, level)) {
-                continue;
-            }
-            Entity entity = level.getEntity(entry.getKey());
-            if (!(entity instanceof LivingEntity livingEntity) || entity.isRemoved() || !livingEntity.isAlive()) {
-                if (isMobless(level, entry.getKey())) {
-                    if (now - state.spawnedAtTick() >= state.durationTicks()) {
-                        expired.add(entry.getKey());
-                    }
-                    continue;
-                }
-                deadSources.add(entry.getKey());
-                continue;
-            }
-            boolean expiredNow = now - state.spawnedAtTick() >= state.durationTicks();
-            if (!expiredNow && physicsSystem != null) {
-                applyImpactDamage(level, entry.getKey(), state, physicsSystem, now);
-            }
-            Vec3 ragdollPos = rootPosition(state);
-            livingEntity.moveTo(ragdollPos.x, ragdollPos.y, ragdollPos.z, livingEntity.getYRot(), livingEntity.getXRot());
-            livingEntity.setDeltaMovement(Vec3.ZERO);
-            if (expiredNow) {
-                expired.add(entry.getKey());
-            }
+            var state = entry.getValue();
+            if (!ownsRagdoll(state, level)) continue;
+            if (!(level.getEntity(entry.getKey()) instanceof LivingEntity living) || !living.isAlive()) continue;
+            if (physics != null) applyImpactDamage(level, entry.getKey(), state, physics, now);
+            Vec3 position = rootPosition(state);
+            living.moveTo(position.x, position.y, position.z, living.getYRot(), living.getXRot());
+            living.setDeltaMovement(Vec3.ZERO);
         }
-        for (UUID uuid : deadSources) {
-            if (!deferRestoreIfProtected(level, uuid, MobRagdollEndEvent.Reason.RELEASED)) {
-                discardRagdoll(level, uuid);
-            }
+    }
+
+    public static boolean expireFromBlock(ServerLevel level, UUID limb) {
+        UUID source = savedOwnerForPart(level, limb);
+        if (source == null) source = ownerUuidForSubLevel(limb);
+        if (source == null) return true;
+        if (deferRestoreIfProtected(level, source, MobRagdollEndEvent.Reason.EXPIRED)) return false;
+        if (level.getEntity(source) instanceof LivingEntity living && !living.isAlive()) {
+            discardRagdoll(level, source);
+        } else {
+            expireSavedRagdoll(level, source);
         }
-        for (UUID uuid : expired) {
-            if (deferRestoreIfProtected(level, uuid, MobRagdollEndEvent.Reason.EXPIRED)) {
-                continue;
-            }
-            if (level.getEntity(uuid) instanceof LivingEntity livingEntity) {
-                despawn(level, livingEntity, MobRagdollEndEvent.Reason.EXPIRED);
-            } else {
-                discardRagdoll(level, uuid);
-            }
-        }
+        return true;
     }
 
     private static void drainSpawnQueue(ServerLevel level) {
@@ -817,6 +848,8 @@ public final class MobRagdollAssembly {
                 BlockPos safePos = new BlockPos(pending.baseBlockPos.getX(), safeY, pending.baseBlockPos.getZ());
                 AssembledPart assembled = assemblePart(level, safePos, part, pending.entityUUID, pending.entityNetworkId);
                 if (assembled != null) {
+                    RagdollBlockOwnership.assign(
+                            assembled.subLevel(), pending.ragdollId, assembled.subLevel().getUniqueId(), part.partName());
                     Vec3 desired = pending.base
                             .add(pending.right.scale(part.xOffset()))
                             .add(0.0, part.yOffset(), 0.0)
@@ -851,6 +884,11 @@ public final class MobRagdollAssembly {
             RESTORED_UUIDS.add(entity.getUUID());
         }
         hideRagdollSource(entity);
+        entity.getPersistentData().putUUID(RagdollBlockLifetime.SOURCE_SESSION, pending.ragdollId);
+        for (SpawnedPart spawned : spawnedParts) {
+            RagdollBlockLifetime.configure(
+                    spawned.subLevel(), "MOB", entity.getUUID(), pending.durationTicks);
+        }
         RAGDOLL_STATES.put(entity.getUUID(), new RagdollState(List.copyOf(spawnedParts), level.getGameTime(), entity.position(), pending.durationTicks));
         syncClientSourceState(entity, true);
 
@@ -897,9 +935,10 @@ public final class MobRagdollAssembly {
     }
 
     private static boolean ownsRagdoll(RagdollState state, ServerLevel level) {
+        if (state == null) return false;
         for (SpawnedPart part : state.parts()) {
             ServerSubLevel subLevel = part.subLevel();
-            if (subLevel != null && !subLevel.isRemoved() && subLevel.getLevel() == level) {
+            if (subLevel != null && subLevel.getLevel() == level) {
                 return true;
             }
         }
@@ -923,7 +962,7 @@ public final class MobRagdollAssembly {
         MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
         SubLevelContainer container = SubLevelContainer.getContainer(level);
         if (saved != null) {
-            removeSavedSubLevels(container, saved);
+            removeSavedSubLevels(level, container, saved);
         }
         savedData.removeEntry(uuid);
 
@@ -932,7 +971,7 @@ public final class MobRagdollAssembly {
                 ServerSubLevel subLevel = spawned.subLevel();
                 LAST_VELOCITIES.remove(subLevel);
                 if (subLevel != null && !subLevel.isRemoved()) {
-                    removeSubLevelIfPresent(container, subLevel);
+                    if (saved == null) RagdollCleanup.removeLimb(level, limbId(spawned));
                 }
             }
         }
@@ -942,23 +981,12 @@ public final class MobRagdollAssembly {
         }
     }
 
-    private static final int SAVED_SWEEP_INTERVAL_TICKS = 40;
-
-    private static void sweepLeakedSavedRagdolls(ServerLevel level, long now) {
-        if (now % SAVED_SWEEP_INTERVAL_TICKS != 0L) return;
-        MobRagdollSavedData savedData = MobRagdollSavedData.get(level);
-        if (savedData.entries().isEmpty()) return;
-        for (UUID uuid : List.copyOf(savedData.entries().keySet())) {
-            MobRagdollSavedData.Entry saved = savedData.getEntry(uuid);
-            if (saved == null) continue;
-            if (RAGDOLL_STATES.containsKey(uuid) || RESTORED_HANDLES.containsKey(uuid)) continue;
-            if (now - saved.spawnedAtTick() < saved.durationTicks()) continue;
-            expireSavedRagdoll(level, uuid);
-        }
+    private static void expireSavedRagdoll(ServerLevel level, UUID uuid) {
+        expireSavedRagdoll(level, uuid, MobRagdollEndEvent.Reason.EXPIRED);
     }
 
-    private static void expireSavedRagdoll(ServerLevel level, UUID uuid) {
-        if (deferRestoreIfProtected(level, uuid, MobRagdollEndEvent.Reason.EXPIRED)) {
+    private static void expireSavedRagdoll(ServerLevel level, UUID uuid, MobRagdollEndEvent.Reason reason) {
+        if (deferRestoreIfProtected(level, uuid, reason)) {
             return;
         }
         MobRagdollSavedData savedData = MobRagdollSavedData.get(level);
@@ -978,14 +1006,14 @@ public final class MobRagdollAssembly {
         if (target != null) {
             syncClientSourceState(target, false);
             Vec3 exitVelocity = state == null ? Vec3.ZERO : rootVelocity(state);
-            NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(target, exitVelocity, MobRagdollEndEvent.Reason.EXPIRED));
+            NeoForge.EVENT_BUS.post(new MobRagdollEndEvent(target, exitVelocity, reason));
             if (target.isPassenger()) {
                 target.stopRiding();
             }
             showRagdollSource(target);
         }
         if (saved != null) {
-            removeSavedSubLevels(container, saved);
+            removeSavedSubLevels(level, container, saved);
         }
         savedData.removeEntry(uuid);
         if (state != null) {
@@ -993,7 +1021,7 @@ public final class MobRagdollAssembly {
                 ServerSubLevel subLevel = spawned.subLevel();
                 LAST_VELOCITIES.remove(subLevel);
                 if (subLevel != null && !subLevel.isRemoved()) {
-                    removeSubLevelIfPresent(container, subLevel);
+                    if (saved == null) RagdollCleanup.removeLimb(level, limbId(spawned));
                 }
             }
         }
@@ -1009,31 +1037,12 @@ public final class MobRagdollAssembly {
         PacketDistributor.sendToPlayersTrackingEntity(entity, new MobRagdollSourceStatePacket(entity.getId(), hidden));
     }
 
-    private static void removeSavedSubLevels(SubLevelContainer container, MobRagdollSavedData.Entry saved) {
-        if (container == null) {
-            return;
-        }
-        for (UUID subLevelId : saved.partIds().values()) {
-            SubLevel subLevel = container.getSubLevel(subLevelId);
-            if (subLevel instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved()) {
-                LAST_VELOCITIES.remove(serverSubLevel);
-                removeSubLevelIfPresent(container, serverSubLevel);
-            }
-        }
+    private static void removeSavedSubLevels(ServerLevel level, SubLevelContainer container, MobRagdollSavedData.Entry saved) {
+        RagdollCleanup.removeLimbs(level, new java.util.HashSet<>(saved.partIds().values()));
     }
 
     private static void removeSubLevelIfPresent(SubLevelContainer container, ServerSubLevel subLevel) {
-        if (container == null || subLevel == null || subLevel.isRemoved()) {
-            return;
-        }
-        SubLevel current = container.getSubLevel(subLevel.getUniqueId());
-        if (current instanceof ServerSubLevel currentServerSubLevel && !currentServerSubLevel.isRemoved()) {
-            Collection<Entity> detached = SubLevelEntityDetachHelper.detachTrackingEntities(
-                    currentServerSubLevel,
-                    entity -> MobRagdollAssembly.isActiveOrSavedRagdollSource(currentServerSubLevel.getLevel(), entity.getUUID()));
-            container.removeSubLevel(currentServerSubLevel, SubLevelRemovalReason.REMOVED);
-            SubLevelEntityDetachHelper.syncDetachedEntities(detached);
-        }
+        if (subLevel != null) RagdollCleanup.removePart(subLevel.getLevel(), subLevel);
     }
 
     private static LivingEntity recreateEntity(ServerLevel level, UUID uuid, MobRagdollSavedData.Entry saved) {
@@ -1180,7 +1189,7 @@ public final class MobRagdollAssembly {
                 continue;
             }
             SpawnedPart parent = selectParent(child, parts, root);
-            if (parent == null) {
+            if (parent == null || parent.subLevel() == child.subLevel()) {
                 continue;
             }
 
@@ -1201,7 +1210,7 @@ public final class MobRagdollAssembly {
                 PhysicsConstraintHandle handle = SableConstraintCompat.addConstraint(physicsSystem.getPipeline(), parent.subLevel(), child.subLevel(), config);
                 handle.setContactsEnabled(false);
                 tuneAngularJoint(handle);
-                JOINT_BY_CHILD.put(child.subLevel().getUniqueId(), handle);
+                JOINT_BY_CHILD.put(limbId(child), handle);
                 if (representative == null) {
                     representative = handle;
                 }
@@ -1408,7 +1417,7 @@ public final class MobRagdollAssembly {
     private record AssembledPart(ServerSubLevel subLevel, BlockPos anchorPlotPos) {
     }
 
-    private record PendingLaunch(Vec3 linear, Vec3 angular, MobRagdollLaunchOptions options, long requestedTick) {
+    private record PendingLaunch(Vec3 linear, Vec3 angular, MobRagdollLaunchOptions options, long requestedTick, ServerLevel level) {
     }
 
     private record RagdollState(List<SpawnedPart> parts, long spawnedAtTick, Vec3 preRagdollPos, int durationTicks) {
@@ -1418,6 +1427,7 @@ public final class MobRagdollAssembly {
     }
 
     private static final class PendingAssembly {
+        final UUID ragdollId = UUID.randomUUID();
         final ServerLevel level;
         final UUID entityUUID;
         final int entityNetworkId;

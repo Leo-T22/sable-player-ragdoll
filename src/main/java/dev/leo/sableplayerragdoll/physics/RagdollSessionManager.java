@@ -12,7 +12,6 @@ import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -41,8 +40,6 @@ public final class RagdollSessionManager {
    private static final String GRAB_DISABLED_KEY = "grabDisabled";
    private static final int MIN_TICKS_BEFORE_SPEED_RELEASE = 8;
    private static final int NON_PLAYER_DURATION_SCALE = 3;
-   private static final Set<UUID> ACTIVE = ConcurrentHashMap.newKeySet();
-   private static final ConcurrentHashMap<UUID, UUID> ACTIVE_BY_PLAYER = new ConcurrentHashMap<>();
    private static final ConcurrentHashMap<UUID, List<DespawnCondition>> CUSTOM_DESPAWN_CONDITIONS = new ConcurrentHashMap<>();
    private static final Set<UUID> DISMOUNT_LOCKED = ConcurrentHashMap.newKeySet();
    private static final ConcurrentHashMap<UUID, Vector3d> LAST_VELOCITIES = new ConcurrentHashMap<>();
@@ -52,12 +49,12 @@ public final class RagdollSessionManager {
    }
 
    public static boolean isMarkedRagdoll(ServerSubLevel subLevel) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       return tag != null && tag.getBoolean(RAGDOLL_USER_TAG);
    }
 
    public static void registerRagdoll(ServerSubLevel subLevel, long startTick, @Nullable UUID playerId, boolean nonPlayer) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          tag = new CompoundTag();
       }
@@ -66,55 +63,55 @@ public final class RagdollSessionManager {
       tag.putLong(START_TICK_KEY, startTick);
       if (playerId != null) {
          tag.putUUID(PLAYER_ID_KEY, playerId);
-         ACTIVE_BY_PLAYER.put(playerId, subLevel.getUniqueId());
+      } else {
+         tag.remove(PLAYER_ID_KEY);
       }
 
       tag.putBoolean(NON_PLAYER_KEY, nonPlayer);
       tag.remove(EXPIRING_KEY);
-      subLevel.setUserDataTag(tag);
-      ACTIVE.add(subLevel.getUniqueId());
+      RagdollBlockOwnership.session(subLevel, tag);
+   }
+
+   public static void resetState() {
+      CUSTOM_DESPAWN_CONDITIONS.clear();
+      DISMOUNT_LOCKED.clear();
+      LAST_VELOCITIES.clear();
+      NEXT_IMPACT_DAMAGE_TICKS.clear();
+      RAGDOLL_PIPE_ACTIVE.remove();
    }
 
    public static void unregister(ServerSubLevel subLevel) {
-      UUID playerId = getPlayerId(subLevel);
-      if (playerId != null) {
-         ACTIVE_BY_PLAYER.remove(playerId, subLevel.getUniqueId());
-      }
-      ACTIVE.remove(subLevel.getUniqueId());
-      CUSTOM_DESPAWN_CONDITIONS.remove(subLevel.getUniqueId());
-      DISMOUNT_LOCKED.remove(subLevel.getUniqueId());
-      LAST_VELOCITIES.remove(subLevel.getUniqueId());
-      NEXT_IMPACT_DAMAGE_TICKS.remove(subLevel.getUniqueId());
-      RagdollMotorEffects.clear(subLevel.getUniqueId());
-      RagdollAccessoriesLiveSync.clear(subLevel.getUniqueId());
+      CUSTOM_DESPAWN_CONDITIONS.remove(RagdollBlockOwnership.sessionId(subLevel));
+      DISMOUNT_LOCKED.remove(RagdollBlockOwnership.sessionId(subLevel));
+      LAST_VELOCITIES.remove(RagdollBlockOwnership.sessionId(subLevel));
+      NEXT_IMPACT_DAMAGE_TICKS.remove(RagdollBlockOwnership.sessionId(subLevel));
+      RagdollMotorEffects.clear(RagdollBlockOwnership.sessionId(subLevel));
+      RagdollAccessoriesLiveSync.clear(RagdollBlockOwnership.sessionId(subLevel));
    }
 
    public static void setCustomDespawnConditions(ServerSubLevel subLevel, List<DespawnCondition> conditions) {
       if (conditions.isEmpty()) {
-         CUSTOM_DESPAWN_CONDITIONS.remove(subLevel.getUniqueId());
+         CUSTOM_DESPAWN_CONDITIONS.remove(RagdollBlockOwnership.sessionId(subLevel));
       } else {
-         CUSTOM_DESPAWN_CONDITIONS.put(subLevel.getUniqueId(), List.copyOf(conditions));
+         CUSTOM_DESPAWN_CONDITIONS.put(RagdollBlockOwnership.sessionId(subLevel), List.copyOf(conditions));
       }
    }
 
    static void detachPlayer(ServerSubLevel subLevel, PlayerlessDespawnRule rule, long currentGameTime) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) return;
-      if (tag.hasUUID(PLAYER_ID_KEY)) {
-         ACTIVE_BY_PLAYER.remove(tag.getUUID(PLAYER_ID_KEY), subLevel.getUniqueId());
-      }
       tag.remove(PLAYER_ID_KEY);
       tag.putBoolean(NON_PLAYER_KEY, true);
       tag.putLong(START_TICK_KEY, currentGameTime);
       tag.remove(EXPIRING_KEY);
-      subLevel.setUserDataTag(tag);
+      RagdollBlockOwnership.session(subLevel, tag);
       setPlayerlessDespawnRule(subLevel, rule);
-      CUSTOM_DESPAWN_CONDITIONS.remove(subLevel.getUniqueId());
-      DISMOUNT_LOCKED.remove(subLevel.getUniqueId());
+      CUSTOM_DESPAWN_CONDITIONS.remove(RagdollBlockOwnership.sessionId(subLevel));
+      DISMOUNT_LOCKED.remove(RagdollBlockOwnership.sessionId(subLevel));
    }
 
    public static void setPlayerlessDespawnRule(ServerSubLevel subLevel, PlayerlessDespawnRule rule) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          tag = new CompoundTag();
       }
@@ -122,33 +119,31 @@ public final class RagdollSessionManager {
       tag.putString(DESPAWN_MODE_KEY, rule.mode().name());
       tag.putInt(DESPAWN_TICKS_KEY, rule.ticks());
       tag.putDouble(DESPAWN_SPEED_KEY, rule.speedMetersPerSecond());
-      subLevel.setUserDataTag(tag);
+      RagdollBlockOwnership.session(subLevel, tag);
+   }
+
+   private static ServerSubLevel sourceRoot(net.minecraft.world.entity.Entity vehicle, ServerLevel level, UUID owner) {
+      return vehicle instanceof dev.leo.sableplayerragdoll.entity.RagdollSeatEntity seat
+            ? seat.ragdollRoot(level, owner) : RagdollBlockOwnership.root(level, owner);
    }
 
    public static @Nullable ServerSubLevel activeRagdollForPlayer(ServerLevel level, UUID playerId) {
-      UUID subLevelId = ACTIVE_BY_PLAYER.get(playerId);
-      if (subLevelId == null) {
-         return null;
+      var entity = level.getEntity(playerId);
+      if (entity == null || entity.getVehicle() == null) return null;
+      var tag = entity.getVehicle().getPersistentData();
+      if (!tag.hasUUID(RagdollBlockLifetime.SOURCE_SESSION)) return null;
+      UUID owner = tag.getUUID(RagdollBlockLifetime.SOURCE_SESSION);
+      var root = sourceRoot(entity.getVehicle(), level, owner);
+      if (root == null) return null;
+      for (var be : RagdollBlockOwnership.blocks(root)) {
+         var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+         if (owner.equals(identity.owner()) && playerId.equals(identity.source())) return root;
       }
-
-      SubLevelContainer container = SubLevelContainer.getContainer(level);
-      if (!(container instanceof ServerSubLevelContainer serverContainer)) {
-         return null;
-      }
-
-      SubLevel subLevel = serverContainer.getSubLevel(subLevelId);
-      if (subLevel instanceof ServerSubLevel serverSubLevel) {
-         if (!serverSubLevel.isRemoved() && playerId.equals(getPlayerId(serverSubLevel))) {
-            return serverSubLevel;
-         }
-         ACTIVE_BY_PLAYER.remove(playerId, subLevelId);
-      }
-
       return null;
    }
 
    static void setGrabDisabled(ServerSubLevel subLevel, boolean disabled) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          if (!disabled) return;
          tag = new CompoundTag();
@@ -158,25 +153,25 @@ public final class RagdollSessionManager {
       } else {
          tag.remove(GRAB_DISABLED_KEY);
       }
-      subLevel.setUserDataTag(tag);
+      RagdollBlockOwnership.session(subLevel, tag);
    }
 
    static boolean isGrabDisabled(ServerSubLevel subLevel) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       return tag != null && tag.getBoolean(GRAB_DISABLED_KEY);
    }
 
    public static void setDismountLocked(ServerSubLevel subLevel, boolean locked) {
       if (locked) {
-         DISMOUNT_LOCKED.add(subLevel.getUniqueId());
+         DISMOUNT_LOCKED.add(RagdollBlockOwnership.sessionId(subLevel));
       } else {
-         DISMOUNT_LOCKED.remove(subLevel.getUniqueId());
+         DISMOUNT_LOCKED.remove(RagdollBlockOwnership.sessionId(subLevel));
       }
    }
 
    public static boolean canManualDismount(ServerLevel level, ServerSubLevel subLevel) {
-      if (DISMOUNT_LOCKED.contains(subLevel.getUniqueId())) return false;
-      CompoundTag tag = subLevel.getUserDataTag();
+      if (DISMOUNT_LOCKED.contains(RagdollBlockOwnership.sessionId(subLevel))) return false;
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) return false;
       long elapsed = level.getGameTime() - tag.getLong(START_TICK_KEY);
       if (elapsed < (long) RagdollSettings.minDismountTicks()) return false;
@@ -184,34 +179,17 @@ public final class RagdollSessionManager {
             || elapsed >= (long) scaledRagdollDurationTicks(tag);
    }
 
-   public static void tickActiveRagdolls(ServerLevel level) {
-      if (!ACTIVE.isEmpty()) {
-         SubLevelContainer container = SubLevelContainer.getContainer(level);
-         if (container instanceof ServerSubLevelContainer serverContainer) {
-            SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-            if (physicsSystem != null) {
-               for (UUID id : new ArrayList<>(ACTIVE)) {
-                  SubLevel subLevel = serverContainer.getSubLevel(id);
-                  if (subLevel instanceof ServerSubLevel serverSubLevel) {
-                     if (serverSubLevel.isRemoved() || !isMarkedRagdoll(serverSubLevel)) {
-                        UUID playerId = getPlayerId(serverSubLevel);
-                        if (playerId != null) {
-                           ACTIVE_BY_PLAYER.remove(playerId, id);
-                        }
-                        ACTIVE.remove(id);
-                        LAST_VELOCITIES.remove(id);
-                        NEXT_IMPACT_DAMAGE_TICKS.remove(id);
-                     } else if (shouldExpire(level, physicsSystem, serverSubLevel)) {
-                        RagdollExpireHelper.expire(physicsSystem, level, serverSubLevel, reasonFor(serverSubLevel, level, physicsSystem));
-                     } else {
-                        RagdollMotorEffects.tick(level, serverSubLevel);
-                        applyImpactDamage(level, physicsSystem, serverContainer, serverSubLevel);
-                        pollAccessories(level, serverSubLevel);
-                     }
-                  }
-               }
-            }
-         }
+   public static void tickRoot(ServerLevel level, ServerSubLevel root) {
+      var physics = SubLevelPhysicsSystem.get(level);
+      var container = SubLevelContainer.getContainer(level);
+      if (physics == null || !(container instanceof ServerSubLevelContainer serverContainer)
+            || root.isRemoved() || !isMarkedRagdoll(root) || isExpiring(root)) return;
+      if (shouldExpire(level, physics, root)) {
+         RagdollExpireHelper.expire(level, root, reasonFor(root, level, physics));
+      } else {
+         RagdollMotorEffects.tick(level, root);
+         applyImpactDamage(level, physics, serverContainer, root);
+         pollAccessories(level, root);
       }
    }
 
@@ -227,12 +205,12 @@ public final class RagdollSessionManager {
       if (isExpiring(subLevel)) {
          return false;
       }
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          return false;
       }
       long elapsed = level.getGameTime() - tag.getLong(START_TICK_KEY);
-      List<DespawnCondition> customConditions = CUSTOM_DESPAWN_CONDITIONS.get(subLevel.getUniqueId());
+      List<DespawnCondition> customConditions = CUSTOM_DESPAWN_CONDITIONS.get(RagdollBlockOwnership.sessionId(subLevel));
       if (customConditions != null) {
          return customConditionsShouldExpire(level, physicsSystem, subLevel, elapsed, customConditions);
       }
@@ -274,14 +252,12 @@ public final class RagdollSessionManager {
    }
 
    private static @Nullable Boolean customPlayerlessExpiration(CompoundTag tag, long elapsed, SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel) {
-      if (!tag.getBoolean(NON_PLAYER_KEY) || !tag.contains(DESPAWN_MODE_KEY)) {
-         return null;
-      }
+      if (!tag.getBoolean(NON_PLAYER_KEY)) return null;
+      if (!tag.contains(DESPAWN_MODE_KEY)) return false;
 
       PlayerlessDespawnRule.Mode mode = despawnMode(tag.getString(DESPAWN_MODE_KEY));
       return switch (mode) {
-         case DEFAULT -> null;
-         case NEVER -> false;
+         case DEFAULT, NEVER -> false;
          case AFTER_TICKS -> elapsed >= (long) tag.getInt(DESPAWN_TICKS_KEY);
          case BELOW_SPEED -> sampleSpeedMetersPerSecond(physicsSystem, subLevel) <= tag.getDouble(DESPAWN_SPEED_KEY);
       };
@@ -296,7 +272,7 @@ public final class RagdollSessionManager {
    }
 
    private static String reasonFor(ServerSubLevel subLevel, ServerLevel level, SubLevelPhysicsSystem physicsSystem) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          return "expired";
       }
@@ -328,33 +304,32 @@ public final class RagdollSessionManager {
    }
 
    static void markExpiring(ServerSubLevel subLevel, String reason) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       if (tag == null) {
          tag = new CompoundTag();
       }
       tag.putBoolean(EXPIRING_KEY, true);
       tag.putString(END_REASON_KEY, reason);
-      subLevel.setUserDataTag(tag);
+      RagdollBlockOwnership.session(subLevel, tag);
    }
 
    public static boolean isExpiring(ServerSubLevel subLevel) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       return tag != null && tag.getBoolean(EXPIRING_KEY);
    }
 
    static @Nullable String getEndReason(ServerSubLevel subLevel) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       return tag != null && tag.contains(END_REASON_KEY) ? tag.getString(END_REASON_KEY) : null;
    }
 
    @Nullable
    public static UUID getPlayerId(ServerSubLevel subLevel) {
-      CompoundTag tag = subLevel.getUserDataTag();
+      CompoundTag tag = RagdollBlockOwnership.session(subLevel);
       return tag != null && tag.hasUUID(PLAYER_ID_KEY) ? tag.getUUID(PLAYER_ID_KEY) : null;
    }
 
    public static boolean isPlayerCurrentlyRagdolled(ServerPlayer player) {
-      if (ACTIVE.isEmpty()) return false;
       ServerSubLevel ragdoll = activeRagdollForPlayer(player.serverLevel(), player.getUUID());
       return ragdoll != null;
    }
@@ -382,7 +357,7 @@ public final class RagdollSessionManager {
       if (delta <= feedbackThreshold) return;
 
       long gameTime = level.getGameTime();
-      UUID rootSubLevelId = rootSubLevel.getUniqueId();
+      UUID rootSubLevelId = RagdollBlockOwnership.sessionId(rootSubLevel);
       if (gameTime < NEXT_IMPACT_DAMAGE_TICKS.getOrDefault(rootSubLevelId, Long.MIN_VALUE)) return;
 
       NEXT_IMPACT_DAMAGE_TICKS.put(rootSubLevelId, gameTime + (long) RagdollSettings.impactDamageCooldownTicks());
@@ -419,7 +394,7 @@ public final class RagdollSessionManager {
    private static ImpactSample sampleLargestLinkedVelocityDelta(ServerLevel level, SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel rootSubLevel) {
       double largestDelta = 0.0;
       Vec3 impactPosition = worldImpactPosition(level, rootSubLevel);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootSubLevel.getUniqueId())) {
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(level, RagdollBlockOwnership.sessionId(rootSubLevel))) {
          SubLevel part = serverContainer.getSubLevel(partId);
          if (!(part instanceof ServerSubLevel partSubLevel) || partSubLevel.isRemoved()) {
             LAST_VELOCITIES.remove(partId);
@@ -493,7 +468,7 @@ public final class RagdollSessionManager {
       @Override
       public void release() {
          if (!subLevel.isRemoved()) {
-            RagdollExpireHelper.expireImmediate(physicsSystem, player.serverLevel(), subLevel, "api custom release");
+            RagdollExpireHelper.expire(player.serverLevel(), subLevel, "api custom release");
          }
       }
    }

@@ -5,7 +5,6 @@ import dev.leo.sableplayerragdoll.api.PlayerlessDespawnRule;
 import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
 import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
-import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.Iterator;
 import java.util.Map;
@@ -18,9 +17,7 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 
 public final class RagdollDeferredSync {
-   private static final int REMOVAL_DELAY_TICKS = 1;
    private static final Map<UUID, PendingLaunch> PENDING_LAUNCHES = new ConcurrentHashMap<>();
-   private static final Map<UUID, PendingRemoval> PENDING_REMOVALS = new ConcurrentHashMap<>();
 
    private RagdollDeferredSync() {
    }
@@ -47,18 +44,16 @@ public final class RagdollDeferredSync {
       PENDING_LAUNCHES.put(subLevel.getUniqueId(), new PendingLaunch(linearVelocity, angularVelocity, null, launchAllLinkedParts, true, despawnRule, subLevel.getLevel()));
    }
 
-   public static void queueRemoval(UUID subLevelId, ServerLevel level) {
-      PENDING_REMOVALS.putIfAbsent(subLevelId, new PendingRemoval(REMOVAL_DELAY_TICKS, level));
+   public static void resetState() {
+      PENDING_LAUNCHES.clear();
    }
 
    public static void cancel(UUID subLevelId) {
       PENDING_LAUNCHES.remove(subLevelId);
-      PENDING_REMOVALS.remove(subLevelId);
    }
 
    public static void flush(SubLevelPhysicsSystem physicsSystem) {
       flushLaunches(physicsSystem);
-      flushRemovals(physicsSystem);
    }
 
    private static void flushLaunches(SubLevelPhysicsSystem physicsSystem) {
@@ -73,49 +68,59 @@ public final class RagdollDeferredSync {
             Entry<UUID, PendingLaunch> entry = iterator.next();
             if (entry.getValue().level() != physicsSystem.getLevel()) continue;
             if (serverContainer.getSubLevel(entry.getKey()) instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved()) {
-               PendingLaunch launch = entry.getValue();
-               if (launch.seatEntityId() != null && !isSeatEntityLaunchable(physicsSystem.getLevel(), launch.seatEntityId())) {
-                  SablePlayerRagdoll.LOGGER.info(
-                     "[sable_player_ragdoll] dropping queued ragdoll {} — seat entity died or left before launch",
-                     RagdollRegistry.shortId(serverSubLevel.getUniqueId())
-                  );
-                  RagdollRegistry.dropFailed(physicsSystem, serverSubLevel);
-                  iterator.remove();
-                  continue;
-               }
-               try {
-                  RagdollRegistry.wakePhysicsBody(physicsSystem, serverSubLevel);
-                  physicsSystem.getPipeline().onStatsChanged(serverSubLevel);
-                  RagdollRegistry.wakePhysicsBody(physicsSystem, serverSubLevel);
-                  boolean nonPlayerPassenger = launch.nonPlayer();
-                  if (launch.seatEntityId() != null) {
-                     Entity seatEntity = physicsSystem.getLevel().getEntity(launch.seatEntityId());
-                     nonPlayerPassenger = seatEntity != null && !(seatEntity instanceof ServerPlayer);
-                     if (seatEntity instanceof LivingEntity livingEntity) {
-                        RagdollSeatingHelper.trySeatEntity(physicsSystem.getLevel(), livingEntity, serverSubLevel);
-                     }
-                  }
-                  int launchedParts = launchLinkedParts(physicsSystem, serverContainer, serverSubLevel, launch);
-                  RagdollSessionManager.registerRagdoll(serverSubLevel, physicsSystem.getLevel().getGameTime(), launch.seatEntityId(), nonPlayerPassenger);
-                  if (launch.nonPlayer()) {
-                     RagdollSessionManager.setPlayerlessDespawnRule(serverSubLevel, launch.despawnRule());
-                  }
-                  SablePlayerRagdoll.LOGGER.info(
-                     "[sable_player_ragdoll] ragdoll launched {} linear={} angular={} parts={}",
-                     RagdollRegistry.shortId(serverSubLevel.getUniqueId()),
-                     RagdollRegistry.fmtVec3dc(launch.linearVelocity()),
-                     RagdollRegistry.fmtVec3dc(launch.angularVelocity()),
-                     launchedParts
-                  );
-               } catch (Throwable var9) {
-                  SablePlayerRagdoll.LOGGER.warn("[sable_player_ragdoll] launch failed for ragdoll {}: {}", entry.getKey(), var9.toString());
-                  RagdollRegistry.dropFailed(physicsSystem, serverSubLevel, launch.seatEntityId());
-               }
+               launch(physicsSystem, serverContainer, serverSubLevel, entry.getValue());
                iterator.remove();
                continue;
             }
             iterator.remove();
          }
+      }
+   }
+
+   public static void launchNow(SubLevelPhysicsSystem physicsSystem, ServerSubLevel subLevel, org.joml.Vector3d linearVelocity, org.joml.Vector3d angularVelocity, UUID seatEntityId, boolean launchAllLinkedParts) {
+      SubLevelContainer container = SubLevelContainer.getContainer(physicsSystem.getLevel());
+      if (!(container instanceof ServerSubLevelContainer serverContainer)) {
+         return;
+      }
+      launch(physicsSystem, serverContainer, subLevel, new PendingLaunch(linearVelocity, angularVelocity, seatEntityId, launchAllLinkedParts, false, PlayerlessDespawnRule.defaultRule(), subLevel.getLevel()));
+   }
+
+   private static void launch(SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel serverSubLevel, PendingLaunch launch) {
+      if (launch.seatEntityId() != null && !isSeatEntityLaunchable(physicsSystem.getLevel(), launch.seatEntityId())) {
+         SablePlayerRagdoll.LOGGER.info(
+            "[sable_player_ragdoll] dropping queued ragdoll {} — seat entity died or left before launch",
+            RagdollRegistry.shortId(serverSubLevel.getUniqueId())
+         );
+         RagdollRegistry.dropFailed(physicsSystem, serverSubLevel);
+         return;
+      }
+      try {
+         RagdollRegistry.wakePhysicsBody(physicsSystem, serverSubLevel);
+         physicsSystem.getPipeline().onStatsChanged(serverSubLevel);
+         RagdollRegistry.wakePhysicsBody(physicsSystem, serverSubLevel);
+         boolean nonPlayerPassenger = launch.nonPlayer();
+         if (launch.seatEntityId() != null) {
+            Entity seatEntity = physicsSystem.getLevel().getEntity(launch.seatEntityId());
+            nonPlayerPassenger = seatEntity != null && !(seatEntity instanceof ServerPlayer);
+            if (seatEntity instanceof LivingEntity livingEntity) {
+               RagdollSeatingHelper.trySeatEntity(physicsSystem.getLevel(), livingEntity, serverSubLevel);
+            }
+         }
+         int launchedParts = launchLinkedParts(physicsSystem, serverContainer, serverSubLevel, launch);
+         RagdollSessionManager.registerRagdoll(serverSubLevel, physicsSystem.getLevel().getGameTime(), launch.seatEntityId(), nonPlayerPassenger);
+         if (launch.nonPlayer()) {
+            RagdollSessionManager.setPlayerlessDespawnRule(serverSubLevel, launch.despawnRule());
+         }
+         SablePlayerRagdoll.LOGGER.info(
+            "[sable_player_ragdoll] ragdoll launched {} linear={} angular={} parts={}",
+            RagdollRegistry.shortId(serverSubLevel.getUniqueId()),
+            RagdollRegistry.fmtVec3dc(launch.linearVelocity()),
+            RagdollRegistry.fmtVec3dc(launch.angularVelocity()),
+            launchedParts
+         );
+      } catch (Throwable var9) {
+         SablePlayerRagdoll.LOGGER.warn("[sable_player_ragdoll] launch failed for ragdoll {}: {}", serverSubLevel.getUniqueId(), var9.toString());
+         RagdollRegistry.dropFailed(physicsSystem, serverSubLevel, launch.seatEntityId());
       }
    }
 
@@ -149,9 +154,10 @@ public final class RagdollDeferredSync {
    private static int launchLinkedParts(SubLevelPhysicsSystem physicsSystem, ServerSubLevelContainer serverContainer, ServerSubLevel rootSubLevel, PendingLaunch launch) {
       UUID rootId = rootSubLevel.getUniqueId();
       if (launch.launchAllLinkedParts()) {
-         UUID headId = RagdollAssemblyHelper.linkedHeadPart(rootId);
+         var parts = RagdollAssemblyData.parts(physicsSystem.getLevel(), rootId);
+         UUID headId = parts.get(dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart.HEAD);
          int launched = 0;
-         for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
+         for (UUID partId : parts.values()) {
             if (serverContainer.getSubLevel(partId) instanceof ServerSubLevel partSubLevel && !partSubLevel.isRemoved()) {
                RagdollRegistry.wakePhysicsBody(physicsSystem, partSubLevel);
                physicsSystem.getPipeline().onStatsChanged(partSubLevel);
@@ -169,30 +175,6 @@ public final class RagdollDeferredSync {
       RagdollRegistry.wakePhysicsBody(physicsSystem, rootSubLevel);
       applyLaunchVelocity(physicsSystem, rootSubLevel, launch, LAUNCH_STRENGTH);
       return 1;
-   }
-
-   public static void flushRemovals(SubLevelPhysicsSystem physicsSystem) {
-      if (!PENDING_REMOVALS.isEmpty()) {
-         SubLevelContainer container = SubLevelContainer.getContainer(physicsSystem.getLevel());
-         if (container instanceof ServerSubLevelContainer serverContainer) {
-            Iterator<Entry<UUID, PendingRemoval>> iterator = PENDING_REMOVALS.entrySet().iterator();
-            while (iterator.hasNext()) {
-               Entry<UUID, PendingRemoval> entry = iterator.next();
-               if (entry.getValue().level() != physicsSystem.getLevel()) continue;
-               if (entry.getValue().ticksRemaining() > 1) {
-                  PENDING_REMOVALS.put(entry.getKey(), new PendingRemoval(entry.getValue().ticksRemaining() - 1, entry.getValue().level()));
-               } else {
-                  SubLevel subLevel = serverContainer.getSubLevel(entry.getKey());
-                  if (subLevel instanceof ServerSubLevel serverSubLevel && !serverSubLevel.isRemoved()) {
-                     RagdollRemovalHelper.removeRagdollSubLevel(physicsSystem, serverSubLevel);
-                  }
-                  iterator.remove();
-               }
-            }
-         } else {
-            PENDING_REMOVALS.clear();
-         }
-      }
    }
 
    private record PendingLaunch(
@@ -223,6 +205,4 @@ public final class RagdollDeferredSync {
       }
    }
 
-   private record PendingRemoval(int ticksRemaining, ServerLevel level) {
-   }
 }

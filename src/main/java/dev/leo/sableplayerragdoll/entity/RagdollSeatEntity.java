@@ -1,5 +1,9 @@
 package dev.leo.sableplayerragdoll.entity;
 
+import dev.leo.sableplayerragdoll.physics.RagdollBlockLifetime;
+import dev.leo.sableplayerragdoll.physics.RagdollBlockOwnership;
+import dev.leo.sableplayerragdoll.physics.RagdollSeatingHelper;
+
 import dev.leo.sableplayerragdoll.block.RagdollPartBlock;
 import dev.leo.sableplayerragdoll.block.RagdollSeatBlock;
 import java.util.Optional;
@@ -22,6 +26,41 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
    private static final String ANCHOR_Y_KEY = "AnchorY";
    private static final String ANCHOR_Z_KEY = "AnchorZ";
    private Optional<Vec3> plotAnchor = Optional.empty();
+   private java.util.UUID hiddenRider;
+   private boolean riderWasInvisible;
+
+   public void hideRider(net.minecraft.server.level.ServerPlayer player) {
+      if (!hasPassenger(player)) return;
+      if (hiddenRider == null) {
+         hiddenRider = player.getUUID();
+         riderWasInvisible = player.isInvisible();
+      }
+      if (hiddenRider.equals(player.getUUID())) player.setInvisible(true);
+   }
+
+   public void restoreRiderVisibility(net.minecraft.server.level.ServerPlayer player) {
+      if (!player.getUUID().equals(hiddenRider)) return;
+      hiddenRider = null;
+      player.setInvisible(riderWasInvisible
+            || player.hasEffect(net.minecraft.world.effect.MobEffects.INVISIBILITY)
+            || player.isSpectator());
+   }
+
+   private net.minecraft.world.level.block.entity.BlockEntity cachedRoot;
+
+   public dev.ryanhcode.sable.sublevel.ServerSubLevel ragdollRoot(net.minecraft.server.level.ServerLevel level, java.util.UUID owner) {
+      if (!dev.leo.sableplayerragdoll.physics.RagdollRelationships.live(cachedRoot, level)
+            || !(cachedRoot instanceof dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock owned)
+            || !owner.equals(owned.ragdollIdentity().owner()) || !owner.equals(owned.ragdollIdentity().limb())) {
+         cachedRoot = RagdollBlockOwnership.findLimb(level, owner);
+      }
+      if (cachedRoot instanceof dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock owned
+            && owner.equals(owned.ragdollIdentity().owner())
+            && dev.ryanhcode.sable.Sable.HELPER.getContaining(level, cachedRoot.getBlockPos())
+                  instanceof dev.ryanhcode.sable.sublevel.ServerSubLevel root && !root.isRemoved()) return root;
+      return null;
+   }
+
 
    public RagdollSeatEntity(EntityType<?> entityType, Level level) {
       super(entityType, level);
@@ -68,6 +107,20 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
             }
          });
 
+         if (this.tickCount > 40 && this.level() instanceof net.minecraft.server.level.ServerLevel serverLevel
+               && getPersistentData().hasUUID(RagdollBlockLifetime.SOURCE_SESSION)) {
+            var owner = getPersistentData().getUUID(RagdollBlockLifetime.SOURCE_SESSION);
+            var root = ragdollRoot(serverLevel, owner);
+            if (root == null) {
+               for (var passenger : java.util.List.copyOf(getPassengers())) {
+                  if (passenger instanceof LivingEntity living)
+                     RagdollSeatingHelper.restoreVisibility(living);
+               }
+               ejectPassengers();
+               discard();
+               return;
+            }
+         }
          if (!this.isVehicle()) {
             var block = this.level().getBlockState(this.blockPosition()).getBlock();
             if (!(block instanceof RagdollSeatBlock) && !(block instanceof RagdollPartBlock)) {
@@ -83,6 +136,9 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
 
    protected void removePassenger(Entity entity) {
       super.removePassenger(entity);
+      if (entity instanceof net.minecraft.server.level.ServerPlayer player) {
+         restoreRiderVisibility(player);
+      }
       if (entity instanceof TamableAnimal tamable) {
          tamable.setInSittingPose(false);
       }
@@ -96,12 +152,18 @@ public final class RagdollSeatEntity extends Entity implements IEntityWithComple
    }
 
    protected void readAdditionalSaveData(CompoundTag tag) {
+      hiddenRider = tag.hasUUID("HiddenRider") ? tag.getUUID("HiddenRider") : null;
+      riderWasInvisible = tag.getBoolean("RiderWasInvisible");
       if (tag.contains(ANCHOR_X_KEY) && tag.contains(ANCHOR_Y_KEY) && tag.contains(ANCHOR_Z_KEY)) {
          this.plotAnchor = Optional.of(new Vec3(tag.getDouble(ANCHOR_X_KEY), tag.getDouble(ANCHOR_Y_KEY), tag.getDouble(ANCHOR_Z_KEY)));
       }
    }
 
    protected void addAdditionalSaveData(CompoundTag tag) {
+      if (hiddenRider != null) {
+         tag.putUUID("HiddenRider", hiddenRider);
+         tag.putBoolean("RiderWasInvisible", riderWasInvisible);
+      }
       this.plotAnchor.ifPresent(anchor -> {
          tag.putDouble(ANCHOR_X_KEY, anchor.x);
          tag.putDouble(ANCHOR_Y_KEY, anchor.y);

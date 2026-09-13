@@ -98,7 +98,7 @@ final class RagdollEquipmentHelper {
 
    static void applyToAllParts(ServerLevel level, UUID rootId, Consumer<RagdollPartBlockEntity> action) {
       var container = SubLevelContainer.getContainer(level);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(level, rootId)) {
          SubLevel subLevel = container.getSubLevel(partId);
          if (subLevel == null || subLevel.getPlot() == null) continue;
          BlockPos center = subLevel.getPlot().getCenterBlock();
@@ -110,7 +110,7 @@ final class RagdollEquipmentHelper {
 
    static void sendPartUpdates(ServerLevel level, UUID rootId) {
       var container = SubLevelContainer.getContainer(level);
-      for (UUID partId : RagdollAssemblyHelper.linkedParts(rootId)) {
+      for (UUID partId : RagdollAssemblyHelper.linkedParts(level, rootId)) {
          SubLevel subLevel = container.getSubLevel(partId);
          if (subLevel == null || subLevel.getPlot() == null) continue;
          BlockPos center = subLevel.getPlot().getCenterBlock();

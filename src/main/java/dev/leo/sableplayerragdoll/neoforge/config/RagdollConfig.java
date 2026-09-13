@@ -115,15 +115,6 @@ public final class RagdollConfig {
 
    static {
       BUILDER.pop();
-      BUILDER.translation("sable_player_ragdoll.configuration.body_mass").comment("Ragdoll mass density. Individual parts scale by collision volume.").push("body_mass");
-   }
-
-   public static final DoubleValue MOB_MASS_DENSITY = BUILDER.translation("sable_player_ragdoll.configuration.mob_mass_density")
-      .comment("Ragdoll mass per full 16x16x16 collision block. Player and mob parts scale by volume.")
-      .defineInRange("mobMassDensity", 1.4, 0.01, 100.0);
-
-   static {
-      BUILDER.pop();
       BUILDER.translation("sable_player_ragdoll.configuration.debug").comment("Developer options.").push("debug");
    }
 
@@ -179,9 +170,5 @@ public final class RagdollConfig {
       RagdollSettings.setExpireAfterSafetyTimeout((Boolean) EXPIRE_AFTER_SAFETY_TIMEOUT.get());
       RagdollSettings.setReleaseSpeedThreshold((Double) RELEASE_SPEED_THRESHOLD.get());
       RagdollSettings.setDebugLogging((Boolean) DEBUG_LOGGING.get());
-      RagdollSettings.setMobMassDensity((Double) MOB_MASS_DENSITY.get());
-   }
-
-   public static void applyBodyMasses() {
    }
 }

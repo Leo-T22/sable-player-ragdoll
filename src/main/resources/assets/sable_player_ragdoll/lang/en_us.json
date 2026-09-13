@@ -37,8 +37,6 @@
   "sable_player_ragdoll.configuration.release_speed_threshold": "Release Speed Threshold",
   "sable_player_ragdoll.configuration.expire_after_safety_timeout": "Expire After Safety Timeout",
   "sable_player_ragdoll.configuration.safety_timeout": "Safety Timeout",
-  "sable_player_ragdoll.configuration.body_mass": "Body Mass",
-  "sable_player_ragdoll.configuration.mob_mass_density": "Ragdoll Mass Density",
   "sable_player_ragdoll.configuration.debug": "Debug",
   "sable_player_ragdoll.configuration.debug_logging": "Debug Logging",
   "block.sable_player_ragdoll.mob_ragdoll_part": "Mob Ragdoll Part"

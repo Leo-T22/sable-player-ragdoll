@@ -1,5 +1,8 @@
 package dev.leo.sableplayerragdoll.block;
 
+import dev.leo.sableplayerragdoll.physics.RagdollBlockLifetime;
+import dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock;
+
 import dev.leo.sableplayerragdoll.RagdollCollisionRules;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
 import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity.BodyPart;
@@ -36,6 +39,16 @@ public final class RagdollPartBlock extends Block implements EntityBlock, BlockS
       super(properties);
       this.registerDefaultState(this.defaultBlockState().setValue(BODY_PART, BodyPart.TORSO));
    }
+
+    @Override
+    public <T extends BlockEntity> net.minecraft.world.level.block.entity.BlockEntityTicker<T> getTicker(
+            net.minecraft.world.level.Level level, BlockState state,
+            net.minecraft.world.level.block.entity.BlockEntityType<T> type) {
+        return level.isClientSide ? null : (world, pos, blockState, be) -> {
+            if (be instanceof RagdollOwnedBlock)
+                RagdollBlockLifetime.tick(be);
+        };
+    }
 
    @Nullable
    @Override

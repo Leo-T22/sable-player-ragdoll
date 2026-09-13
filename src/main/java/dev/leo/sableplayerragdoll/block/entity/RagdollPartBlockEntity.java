@@ -1,5 +1,9 @@
 package dev.leo.sableplayerragdoll.block.entity;
 
+import dev.leo.sableplayerragdoll.physics.RagdollBlockIdentity;
+import dev.leo.sableplayerragdoll.physics.RagdollBlockOwnership;
+import dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock;
+
 import com.mojang.authlib.GameProfile;
 import com.mojang.authlib.properties.Property;
 import dev.leo.sableplayerragdoll.RagdollGrabCallbacks;
@@ -35,6 +39,7 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockEntityDataPacket;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.StringRepresentable;
 import net.minecraft.world.entity.ai.attributes.Attributes;
@@ -46,7 +51,25 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Quaterniond;
 import org.joml.Vector3d;
 
-public final class RagdollPartBlockEntity extends BlockEntity implements BlockEntitySubLevelActor {
+public final class RagdollPartBlockEntity extends BlockEntity implements BlockEntitySubLevelActor, RagdollOwnedBlock {
+    private final RagdollBlockIdentity ragdollIdentity = new RagdollBlockIdentity();
+
+    @Override
+    public RagdollBlockIdentity ragdollIdentity() { return ragdollIdentity; }
+
+    @Override
+    public void setRagdollIdentity(UUID owner, UUID limb, String kind) {
+        ragdollIdentity.assign(owner, limb, kind);
+        setChanged();
+    }
+
+    @Override
+    public void markSevered() {
+        ragdollIdentity.sever(level == null ? 0 : level.getGameTime());
+        setChanged();
+        if (level != null) level.sendBlockUpdated(worldPosition, getBlockState(), getBlockState(), 3);
+    }
+
    private static final double GRAB_STIFFNESS = 500.0;
    private static final double GRAB_DAMPING = 50.0;
    private static final double GRAB_MAX_FORCE = 200.0;
@@ -135,8 +158,9 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
 
    @Override
    public void sable$physicsTick(ServerSubLevel subLevel, RigidBodyHandle handle, double timeStep) {
-      if (this.bodyPart == BodyPart.TORSO && subLevel.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-         RagdollRegistry.tryRestoreOnLoad(serverLevel, subLevel);
+      if (!ragdollIdentity.severed() && this.bodyPart == BodyPart.TORSO && subLevel.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+         dev.leo.sableplayerragdoll.physics.RagdollRelationships.withBlock(this, () ->
+               RagdollRegistry.tryRestoreOnLoad(serverLevel, subLevel));
       }
       this.checkGrabbers();
 
@@ -144,12 +168,15 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
          constraint.physicsTick(subLevel);
       }
 
-      if (this.bodyPart == BodyPart.TORSO) {
-         RagdollControlHelper.apply(subLevel, handle, timeStep);
-      } else if (this.bodyPart == BodyPart.LEFT_ARM || this.bodyPart == BodyPart.RIGHT_ARM) {
-         RagdollControlHelper.applyArm(subLevel, handle, timeStep, this.bodyPart);
-         RagdollControlHelper.applyArmGrab(subLevel, this.bodyPart);
-      }
+      if (ragdollIdentity.severed()) return;
+      dev.leo.sableplayerragdoll.physics.RagdollRelationships.withBlock(this, () -> {
+         if (this.bodyPart == BodyPart.TORSO) {
+            RagdollControlHelper.apply(subLevel, handle, timeStep);
+         } else if (this.bodyPart == BodyPart.LEFT_ARM || this.bodyPart == BodyPart.RIGHT_ARM) {
+            RagdollControlHelper.applyArm(subLevel, handle, timeStep, this.bodyPart);
+            RagdollControlHelper.applyArmGrab(subLevel, this.bodyPart);
+         }
+      });
    }
 
    private void checkGrabbers() {
@@ -196,6 +223,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    @Override
    public void setRemoved() {
       super.setRemoved();
+        dev.leo.sableplayerragdoll.physics.RagdollRelationships.forget(this);
       this.removeAllGrabbers();
    }
 
@@ -327,6 +355,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    @Override
    protected void saveAdditional(CompoundTag tag, HolderLookup.Provider registries) {
       super.saveAdditional(tag, registries);
+        ragdollIdentity.save(tag);
       tag.putString("BodyPart", this.bodyPart.name());
       if (this.skinUuid != null) {
          tag.putUUID("SkinUuid", this.skinUuid);
@@ -354,6 +383,7 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
    @Override
    protected void loadAdditional(CompoundTag tag, HolderLookup.Provider registries) {
       super.loadAdditional(tag, registries);
+        ragdollIdentity.load(tag);
       this.bodyPart = BodyPart.byName(tag.getString("BodyPart"));
       this.maxHealth = tag.contains("MaxHealth") ? tag.getFloat("MaxHealth") : 20f;
       this.corpse = tag.getBoolean("Corpse");
@@ -491,7 +521,8 @@ public final class RagdollPartBlockEntity extends BlockEntity implements BlockEn
          }
 
          SubLevel standingSubLevel = Sable.HELPER.getTrackingSubLevel(player);
-         if (standingSubLevel != null && RagdollAssemblyHelper.isRagdollPart(standingSubLevel.getUniqueId())) {
+         if (standingSubLevel != null && subLevel.getLevel() instanceof ServerLevel level
+               && RagdollAssemblyHelper.isRagdollPart(level, standingSubLevel.getUniqueId())) {
             return;
          }
 

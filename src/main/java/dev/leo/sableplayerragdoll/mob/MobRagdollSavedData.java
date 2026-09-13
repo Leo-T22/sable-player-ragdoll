@@ -1,9 +1,11 @@
 package dev.leo.sableplayerragdoll.mob;
 
+import dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity;
+import dev.leo.sableplayerragdoll.physics.RagdollBlockOwnership;
+import dev.leo.sableplayerragdoll.physics.RagdollOwnedBlock;
+
 import dev.leo.sableplayerragdoll.mob.block.MobPartRole;
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import net.minecraft.core.HolderLookup;
@@ -22,15 +24,18 @@ public class MobRagdollSavedData extends SavedData {
     );
 
     private final Map<UUID, Entry> entries = new HashMap<>();
+    private ServerLevel level;
 
     public static MobRagdollSavedData get(ServerLevel level) {
-        return level.getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
+        var data = level.getDataStorage().computeIfAbsent(FACTORY, DATA_NAME);
+        data.level = level;
+        return data;
     }
 
     public void addEntry(UUID entityId, long spawnedAtTick, int durationTicks, Vec3 preRagdollPos,
                           String entityType, CompoundTag entityData,
                           Map<String, PartInfo> partInfos, Map<String, UUID> partIds) {
-        entries.put(entityId, new Entry(
+        putEntry(entityId, new Entry(
                 spawnedAtTick,
                 durationTicks,
                 preRagdollPos,
@@ -39,26 +44,31 @@ public class MobRagdollSavedData extends SavedData {
                 Map.copyOf(partInfos),
                 Map.copyOf(partIds),
                 false));
-        setDirty();
     }
 
     public void markMobless(UUID entityId) {
-        Entry e = entries.get(entityId);
+        Entry e = getEntry(entityId);
         if (e != null && !e.mobless()) {
-            entries.put(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
+            putEntry(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
                     e.entityType(), e.entityData(), e.partInfos(), e.partIds(), true));
-            setDirty();
         }
     }
 
     public void removeEntry(UUID entityId) {
+        for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+            var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+            var tag = identity.assembly();
+            if (tag.hasUUID("EntityId") && entityId.equals(tag.getUUID("EntityId"))) {
+                identity.assembly(new CompoundTag()); be.setChanged();
+            }
+        }
         if (entries.remove(entityId) != null) {
             setDirty();
         }
     }
 
     public void removePart(UUID entityId, UUID partSubLevelId) {
-        Entry e = entries.get(entityId);
+        Entry e = getEntry(entityId);
         if (e == null) {
             return;
         }
@@ -76,59 +86,33 @@ public class MobRagdollSavedData extends SavedData {
         Map<String, UUID> partIds = new HashMap<>(e.partIds());
         partInfos.remove(partName);
         partIds.remove(partName);
-        entries.put(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
+        putEntry(entityId, new Entry(e.spawnedAtTick(), e.durationTicks(), e.preRagdollPos(),
                 e.entityType(), e.entityData(), Map.copyOf(partInfos), Map.copyOf(partIds), e.mobless()));
-        setDirty();
     }
 
     public Entry getEntry(UUID entityId) {
+        for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+            var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+            var tag = identity.assembly();
+            if (tag.hasUUID("EntityId") && entityId.equals(tag.getUUID("EntityId"))) return decode(tag);
+        }
         return entries.get(entityId);
     }
 
     public Map<UUID, Entry> entries() {
-        return Map.copyOf(entries);
+        Map<UUID, Entry> result = new HashMap<>(entries);
+        for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+            var tag = ((RagdollOwnedBlock) be).ragdollIdentity().assembly();
+            if (tag.hasUUID("EntityId")) result.computeIfAbsent(tag.getUUID("EntityId"), unused -> decode(tag));
+        }
+        return result;
     }
 
     @Override
     public CompoundTag save(CompoundTag tag, HolderLookup.Provider registries) {
         ListTag list = new ListTag();
         for (var entry : entries.entrySet()) {
-            CompoundTag entryTag = new CompoundTag();
-            entryTag.putUUID("EntityId", entry.getKey());
-            entryTag.putLong("SpawnedAt", entry.getValue().spawnedAtTick);
-            entryTag.putInt("DurationTicks", entry.getValue().durationTicks);
-            entryTag.putBoolean("Mobless", entry.getValue().mobless);
-            entryTag.putString("EntityType", entry.getValue().entityType);
-            entryTag.put("EntityData", entry.getValue().entityData.copy());
-            CompoundTag posTag = new CompoundTag();
-            Vec3 pos = entry.getValue().preRagdollPos;
-            posTag.putDouble("X", pos.x);
-            posTag.putDouble("Y", pos.y);
-            posTag.putDouble("Z", pos.z);
-            entryTag.put("PreRagdollPos", posTag);
-            ListTag partsTag = new ListTag();
-            for (var partEntry : entry.getValue().partInfos.entrySet()) {
-                CompoundTag partTag = new CompoundTag();
-                PartInfo info = partEntry.getValue();
-                partTag.putString("Name", partEntry.getKey());
-                partTag.putString("Role", info.role().getSerializedName());
-                partTag.putFloat("PivotX", info.pivotX());
-                partTag.putFloat("PivotY", info.pivotY());
-                partTag.putFloat("PivotZ", info.pivotZ());
-                partTag.putFloat("CenterX", info.centerX());
-                partTag.putFloat("CenterY", info.centerY());
-                partTag.putFloat("CenterZ", info.centerZ());
-                partTag.putFloat("RotQx", info.rotQx());
-                partTag.putFloat("RotQy", info.rotQy());
-                partTag.putFloat("RotQz", info.rotQz());
-                partTag.putFloat("RotQw", info.rotQw());
-                UUID subLevelId = entry.getValue().partIds.get(partEntry.getKey());
-                if (subLevelId != null) {
-                    partTag.putUUID("SubLevelId", subLevelId);
-                }
-                partsTag.add(partTag);
-            }
-            entryTag.put("Parts", partsTag);
+            CompoundTag entryTag = encode(entry.getKey(), entry.getValue());
             list.add(entryTag);
         }
         tag.put("Entries", list);
@@ -140,44 +124,102 @@ public class MobRagdollSavedData extends SavedData {
         ListTag list = tag.getList("Entries", Tag.TAG_COMPOUND);
         for (int i = 0; i < list.size(); i++) {
             CompoundTag entryTag = list.getCompound(i);
-            UUID entityId = entryTag.getUUID("EntityId");
-            long spawnedAtTick = entryTag.getLong("SpawnedAt");
-            int durationTicks = entryTag.contains("DurationTicks", Tag.TAG_INT)
-                    ? entryTag.getInt("DurationTicks")
-                    : DEFAULT_DURATION_TICKS;
-            String entityType = entryTag.getString("EntityType");
-            CompoundTag entityData = entryTag.contains("EntityData", Tag.TAG_COMPOUND)
-                    ? entryTag.getCompound("EntityData").copy()
-                    : new CompoundTag();
-            CompoundTag posTag = entryTag.getCompound("PreRagdollPos");
-            Vec3 preRagdollPos = new Vec3(posTag.getDouble("X"), posTag.getDouble("Y"), posTag.getDouble("Z"));
-            ListTag partsTag = entryTag.getList("Parts", Tag.TAG_COMPOUND);
-            Map<String, PartInfo> partInfos = new HashMap<>();
-            Map<String, UUID> partIds = new HashMap<>();
-            for (int j = 0; j < partsTag.size(); j++) {
-                CompoundTag partTag = partsTag.getCompound(j);
-                String name = partTag.getString("Name");
-                MobPartRole role = MobPartRole.valueOf(partTag.getString("Role").toUpperCase());
-                float pivotX = partTag.getFloat("PivotX");
-                float pivotY = partTag.getFloat("PivotY");
-                float pivotZ = partTag.getFloat("PivotZ");
-                float centerX = partTag.getFloat("CenterX");
-                float centerY = partTag.getFloat("CenterY");
-                float centerZ = partTag.getFloat("CenterZ");
-                float rotQx = partTag.getFloat("RotQx");
-                float rotQy = partTag.getFloat("RotQy");
-                float rotQz = partTag.getFloat("RotQz");
-                float rotQw = partTag.contains("RotQw", Tag.TAG_FLOAT) ? partTag.getFloat("RotQw") : 1.0F;
-                partInfos.put(name, new PartInfo(role, pivotX, pivotY, pivotZ, centerX, centerY, centerZ,
-                        rotQx, rotQy, rotQz, rotQw));
-                if (partTag.hasUUID("SubLevelId")) {
-                    partIds.put(name, partTag.getUUID("SubLevelId"));
-                }
-            }
-            boolean mobless = entryTag.getBoolean("Mobless");
-            data.entries.put(entityId, new Entry(spawnedAtTick, durationTicks, preRagdollPos, entityType, entityData, partInfos, partIds, mobless));
+            if (entryTag.hasUUID("EntityId")) data.entries.put(entryTag.getUUID("EntityId"), decode(entryTag));
         }
         return data;
+    }
+
+    public void putEntry(UUID entityId, Entry entry) {
+        CompoundTag tag = encode(entityId, entry);
+        boolean written = false;
+        for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+            if (!(be instanceof MobRagdollPartBlockEntity mob) || !mob.renderAnchor()) continue;
+            var identity = mob.ragdollIdentity();
+            if (!identity.severed() && entry.partIds().containsValue(identity.limb())) {
+                identity.assembly(tag);
+                be.setChanged();
+                written = true;
+            }
+        }
+        if (written && entries.remove(entityId) != null) setDirty();
+    }
+
+    private static CompoundTag encode(UUID entityId, Entry entry) {
+        CompoundTag entryTag = new CompoundTag();
+        entryTag.putUUID("EntityId", entityId);
+        entryTag.putLong("SpawnedAt", entry.spawnedAtTick);
+        entryTag.putInt("DurationTicks", entry.durationTicks);
+        entryTag.putBoolean("Mobless", entry.mobless);
+        entryTag.putString("EntityType", entry.entityType);
+        entryTag.put("EntityData", entry.entityData.copy());
+        CompoundTag posTag = new CompoundTag();
+        Vec3 pos = entry.preRagdollPos;
+        posTag.putDouble("X", pos.x);
+        posTag.putDouble("Y", pos.y);
+        posTag.putDouble("Z", pos.z);
+        entryTag.put("PreRagdollPos", posTag);
+        ListTag partsTag = new ListTag();
+        for (var partEntry : entry.partInfos.entrySet()) {
+            CompoundTag partTag = new CompoundTag();
+            PartInfo info = partEntry.getValue();
+            partTag.putString("Name", partEntry.getKey());
+            partTag.putString("Role", info.role().getSerializedName());
+            partTag.putFloat("PivotX", info.pivotX());
+            partTag.putFloat("PivotY", info.pivotY());
+            partTag.putFloat("PivotZ", info.pivotZ());
+            partTag.putFloat("CenterX", info.centerX());
+            partTag.putFloat("CenterY", info.centerY());
+            partTag.putFloat("CenterZ", info.centerZ());
+            partTag.putFloat("RotQx", info.rotQx());
+            partTag.putFloat("RotQy", info.rotQy());
+            partTag.putFloat("RotQz", info.rotQz());
+            partTag.putFloat("RotQw", info.rotQw());
+            UUID subLevelId = entry.partIds.get(partEntry.getKey());
+            if (subLevelId != null) {
+                partTag.putUUID("SubLevelId", subLevelId);
+            }
+            partsTag.add(partTag);
+        }
+        entryTag.put("Parts", partsTag);
+        return entryTag;
+    }
+
+    private static Entry decode(CompoundTag entryTag) {
+        long spawnedAtTick = entryTag.getLong("SpawnedAt");
+        int durationTicks = entryTag.contains("DurationTicks", Tag.TAG_INT)
+                ? entryTag.getInt("DurationTicks")
+                : DEFAULT_DURATION_TICKS;
+        String entityType = entryTag.getString("EntityType");
+        CompoundTag entityData = entryTag.contains("EntityData", Tag.TAG_COMPOUND)
+                ? entryTag.getCompound("EntityData").copy()
+                : new CompoundTag();
+        CompoundTag posTag = entryTag.getCompound("PreRagdollPos");
+        Vec3 preRagdollPos = new Vec3(posTag.getDouble("X"), posTag.getDouble("Y"), posTag.getDouble("Z"));
+        ListTag partsTag = entryTag.getList("Parts", Tag.TAG_COMPOUND);
+        Map<String, PartInfo> partInfos = new HashMap<>();
+        Map<String, UUID> partIds = new HashMap<>();
+        for (int j = 0; j < partsTag.size(); j++) {
+            CompoundTag partTag = partsTag.getCompound(j);
+            String name = partTag.getString("Name");
+            MobPartRole role = MobPartRole.valueOf(partTag.getString("Role").toUpperCase());
+            float pivotX = partTag.getFloat("PivotX");
+            float pivotY = partTag.getFloat("PivotY");
+            float pivotZ = partTag.getFloat("PivotZ");
+            float centerX = partTag.getFloat("CenterX");
+            float centerY = partTag.getFloat("CenterY");
+            float centerZ = partTag.getFloat("CenterZ");
+            float rotQx = partTag.getFloat("RotQx");
+            float rotQy = partTag.getFloat("RotQy");
+            float rotQz = partTag.getFloat("RotQz");
+            float rotQw = partTag.contains("RotQw", Tag.TAG_FLOAT) ? partTag.getFloat("RotQw") : 1.0F;
+            partInfos.put(name, new PartInfo(role, pivotX, pivotY, pivotZ, centerX, centerY, centerZ,
+                    rotQx, rotQy, rotQz, rotQw));
+            if (partTag.hasUUID("SubLevelId")) {
+                partIds.put(name, partTag.getUUID("SubLevelId"));
+            }
+        }
+        boolean mobless = entryTag.getBoolean("Mobless");
+        return new Entry(spawnedAtTick, durationTicks, preRagdollPos, entityType, entityData, partInfos, partIds, mobless);
     }
 
     public record Entry(long spawnedAtTick, int durationTicks, Vec3 preRagdollPos, String entityType, CompoundTag entityData,

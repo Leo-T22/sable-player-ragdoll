@@ -1,5 +1,7 @@
 package dev.leo.sableplayerragdoll.physics;
 
+import dev.leo.sableplayerragdoll.block.entity.RagdollPartBlockEntity;
+
 import com.mojang.authlib.GameProfile;
 import dev.leo.sableplayerragdoll.SablePlayerRagdoll;
 import dev.leo.sableplayerragdoll.api.RagdollStartEvent;
@@ -20,10 +22,8 @@ import dev.ryanhcode.sable.sublevel.ServerSubLevel;
 import dev.ryanhcode.sable.sublevel.SubLevel;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
@@ -40,7 +40,6 @@ import org.joml.Vector3dc;
 
 public final class RagdollRegistry {
    private static final double BLOCKS_PER_TICK_TO_METERS_PER_SECOND = 20.0;
-   private static final Set<UUID> RAGDOLL_BODY_IDS = new HashSet<>();
    private static final Map<UUID, Long> PLAYER_COOLDOWNS = new HashMap<>();
    private static final Map<UUID, Long> LAUNCH_RESERVATIONS = new HashMap<>();
    private static final long LAUNCH_RESERVATION_TICKS = 10L;
@@ -105,13 +104,10 @@ public final class RagdollRegistry {
          return null;
       }
 
-      RAGDOLL_BODY_IDS.add(ragdollBody.getUniqueId());
       UUID seatPlayerId = autoSeat ? playerId : null;
-      RagdollDeferredSync.queueLaunch(ragdollBody, linear, angular, seatPlayerId, true);
       PLAYER_COOLDOWNS.put(playerId, gameTime + (long) RagdollSettings.cooldownTicks());
       LAUNCH_RESERVATIONS.put(playerId, gameTime + LAUNCH_RESERVATION_TICKS);
-      SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] queued ragdoll {} for {} (launch + sitDown next tick)",
-         shortId(ragdollBody.getUniqueId()), player.getGameProfile().getName());
+      RagdollDeferredSync.launchNow(physicsSystem, ragdollBody, linear, angular, seatPlayerId, true);
       return ragdollBody;
    }
 
@@ -161,8 +157,6 @@ public final class RagdollRegistry {
          return null;
       }
 
-      RAGDOLL_BODY_IDS.add(ragdollBody.getUniqueId());
-      RagdollSavedData.get(level).saveRagdoll(ragdollBody.getUniqueId(), doll.partSubLevelIds(), limbs);
       RagdollDeferredSync.queuePlayerlessLaunch(ragdollBody, linear, angular, false, despawnRule);
       SablePlayerRagdoll.LOGGER.info(
          "[sable_player_ragdoll] queued playerless ragdoll {} at {} heading={} ({} parts, {} constraints)",
@@ -180,22 +174,19 @@ public final class RagdollRegistry {
       ServerSubLevel body = RagdollSessionManager.activeRagdollForPlayer(level, playerId);
       if (body == null) return null;
 
-      // Reposition the player back into the real world BEFORE detachPlayer(), because
-      // detachPlayer() clears the playerId <-> ragdoll association, and after that
-      // we'd have no way to know who to return the position to.
-      ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
-      if (player != null && player.isPassenger() && body.getPlot() != null) {
-         Vec3 releasePos = Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(body.getPlot().getCenterBlock()));
-         if (releasePos != null) {
-            player.stopRiding();
-            player.teleportTo(level, releasePos.x, releasePos.y, releasePos.z, player.getYRot(), player.getXRot());
+      UUID owner = RagdollBlockOwnership.ownerForPlayer(level, playerId);
+      if (owner == null) return null;
+      var torso = RagdollBlockOwnership.findLimb(level, owner);
+      Vec3 releasePosition = torso == null ? null : Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(torso.getBlockPos()));
+      RagdollBlockOwnership.withOwner(owner, () -> {
+         // Change the policy first so the dismount callback cannot expire this body.
+         RagdollSessionManager.detachPlayer(body, rule, level.getGameTime());
+         RagdollExpireHelper.unseatPlayerSilently(level, playerId);
+         ServerPlayer player = level.getServer().getPlayerList().getPlayer(playerId);
+         if (player != null && releasePosition != null) {
+            player.teleportTo(level, releasePosition.x, releasePosition.y, releasePosition.z, player.getYRot(), player.getXRot());
          }
-      }
-
-      RagdollSessionManager.detachPlayer(body, rule, level.getGameTime());
-      RagdollExpireHelper.unseatPlayerSilently(level, playerId);
-      Map<BodyPart, UUID> partMap = RagdollAssemblyHelper.linkedPartsAsMap(body.getUniqueId());
-      RagdollSavedData.get(level).saveRagdoll(body.getUniqueId(), partMap, RagdollLimbOptions.defaults());
+      });
       return body;
    }
 
@@ -262,21 +253,17 @@ public final class RagdollRegistry {
       }
    }
 
-   static void untrack(UUID subLevelId) {
-      RAGDOLL_BODY_IDS.remove(subLevelId);
-   }
-
    public static void tryRestoreOnLoad(ServerLevel level, ServerSubLevel rootSubLevel) {
-      UUID rootId = rootSubLevel.getUniqueId();
-      if (hasLiveJoints(rootId)) {
-         return;
-      }
-
-      RagdollSavedData savedData = RagdollSavedData.get(level);
-      Map<BodyPart, UUID> savedParts = savedData.ragdoll(rootId);
-      if (savedParts.isEmpty()) {
-         return;
-      }
+      UUID rootId = RagdollBlockOwnership.sessionId(rootSubLevel);
+      var rootBlock = RagdollBlockOwnership.findLimb(level, rootId);
+      if (!(rootBlock instanceof RagdollOwnedBlock owned)) return;
+      var identity = owned.ragdollIdentity();
+      long now = level.getGameTime();
+      if (now < identity.nextJointCheck) return;
+      identity.nextJointCheck = now + 10 + level.random.nextInt(11);
+      if (rootSubLevel.isRemoved() || RagdollSessionManager.isExpiring(rootSubLevel)) return;
+      Map<BodyPart, UUID> assemblyParts = RagdollAssemblyData.parts(level, rootId);
+      if (assemblyParts.isEmpty()) return;
 
       SubLevelContainer container = SubLevelContainer.getContainer(level);
       if (!(container instanceof ServerSubLevelContainer serverContainer)) {
@@ -284,16 +271,21 @@ public final class RagdollRegistry {
       }
 
       Map<BodyPart, ServerSubLevel> loadedParts = new java.util.EnumMap<>(BodyPart.class);
-      for (Map.Entry<BodyPart, UUID> entry : savedParts.entrySet()) {
-         SubLevel partSubLevel = serverContainer.getSubLevel(entry.getValue());
+      for (Map.Entry<BodyPart, UUID> entry : assemblyParts.entrySet()) {
+         SubLevel partSubLevel = RagdollBlockOwnership.partForLimb(level, entry.getValue());
          if (!(partSubLevel instanceof ServerSubLevel serverPart) || serverPart.isRemoved()) {
-            return;
+            continue;
          }
 
          loadedParts.put(entry.getKey(), serverPart);
       }
 
-      RagdollLimbOptions limbs = savedData.ragdollLimbs(rootId);
+      Map<UUID, UUID> bodies = new HashMap<>();
+      loadedParts.forEach((bodyPart, body) -> bodies.put(assemblyParts.get(bodyPart), body.getUniqueId()));
+      if (bodies.equals(identity.jointBodies) && (hasLiveJoints(rootId) || bodies.values().stream().distinct().count() <= 1)) return;
+      identity.jointBodies = Map.copyOf(bodies);
+      RagdollLimbOptions limbs = RagdollAssemblyData.limbs(level, rootId);
+      RagdollAssemblyHelper.clearJoints(rootId);
       RagdollAssemblyHelper.restoreConstraints(level, loadedParts, limbs);
       SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] restored playerless ragdoll {} ({} parts)",
          shortId(rootId), loadedParts.size());
@@ -316,9 +308,10 @@ public final class RagdollRegistry {
       if (subLevel != null && !subLevel.isRemoved()) {
          RagdollExpireHelper.releaseFailedLaunch(physicsSystem.getLevel(), subLevel, seatEntityId);
          RagdollSessionManager.unregister(subLevel);
-         untrack(subLevel.getUniqueId());
          RagdollDeferredSync.cancel(subLevel.getUniqueId());
-         RagdollRemovalHelper.removeRagdollSubLevel(physicsSystem, subLevel);
+         UUID rootId = RagdollBlockOwnership.sessionId(subLevel);
+         RagdollAssemblyHelper.clearRuntime(rootId);
+         RagdollCleanup.removeLimb(physicsSystem.getLevel(), rootId);
       }
    }
 
@@ -351,15 +344,28 @@ public final class RagdollRegistry {
    }
 
    public static boolean removeById(ServerLevel level, UUID subLevelId, boolean smokePuff) {
-      SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-      if (physicsSystem == null) return false;
-      UUID rootId = RagdollAssemblyHelper.linkedRoot(subLevelId);
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(level, subLevelId);
+      if (rootId == null) rootId = RagdollAssemblyData.ownerForLimb(level, subLevelId);
       UUID targetId = rootId != null ? rootId : subLevelId;
-      SubLevel subLevel = SubLevelContainer.getContainer(level).getSubLevel(targetId);
-      if (!(subLevel instanceof ServerSubLevel ssl) || ssl.isRemoved()) return false;
-      tryRestoreOnLoad(level, ssl);
+      SubLevelContainer container = SubLevelContainer.getContainer(level);
+      if (container == null) return false;
+      SubLevel subLevel = RagdollBlockOwnership.root(level, targetId);
+      if (subLevel == null && rootId != null) subLevel = container.getSubLevel(targetId);
+      if (!(subLevel instanceof ServerSubLevel ssl)) {
+         if (rootId == null) {
+            if (!RagdollBlockOwnership.hasLimb(level, subLevelId)) return false;
+            if (smokePuff && container.getSubLevel(subLevelId) instanceof ServerSubLevel limb) emitRemovalPuff(level, limb);
+            RagdollCleanup.removeLimb(level, subLevelId);
+            return true;
+         }
+         RagdollAssemblyHelper.clearRuntime(rootId);
+         RagdollCleanup.removeLimb(level, rootId);
+         return true;
+      }
+      if (!RagdollCleanup.isOwned(ssl)) return false;
       if (smokePuff) emitRemovalPuff(level, ssl);
-      RagdollExpireHelper.expireImmediate(physicsSystem, level, ssl, "api remove by id");
+      RagdollBlockOwnership.withOwner(rootId == null ? targetId : rootId, () ->
+            RagdollExpireHelper.expire(level, ssl, "api remove by id"));
       return true;
    }
 
@@ -379,24 +385,19 @@ public final class RagdollRegistry {
 
    @Nullable
    public static UUID dismember(ServerLevel level, UUID rootId, BodyPart limb) {
-      UUID limbId = RagdollAssemblyHelper.dismember(rootId, limb);
-      if (limbId != null) syncSavedAfterDismember(level, rootId);
+      UUID limbId = RagdollAssemblyHelper.dismember(level, rootId, limb);
+      if (limbId != null) {
+         RagdollBlockOwnership.sever(level, limbId);
+      }
       return limbId;
    }
 
    @Nullable
    public static UUID dismemberPart(ServerLevel level, UUID partSubLevelId) {
-      UUID rootId = RagdollAssemblyHelper.linkedRoot(partSubLevelId);
-      BodyPart limb = RagdollAssemblyHelper.bodyPartOf(partSubLevelId);
+      UUID rootId = RagdollAssemblyHelper.linkedRoot(level, partSubLevelId);
+      BodyPart limb = RagdollAssemblyHelper.bodyPartOf(level, partSubLevelId);
       if (rootId == null || limb == null) return null;
       return dismember(level, rootId, limb);
-   }
-
-   private static void syncSavedAfterDismember(ServerLevel level, UUID rootId) {
-      RagdollSavedData saved = RagdollSavedData.get(level);
-      if (!saved.ragdoll(rootId).isEmpty()) {
-         saved.saveRagdoll(rootId, RagdollAssemblyHelper.linkedPartsAsMap(rootId), saved.ragdollLimbs(rootId));
-      }
    }
 
    public static void setGrabDisabled(ServerLevel level, UUID subLevelId, boolean disabled) {
@@ -433,10 +434,11 @@ public final class RagdollRegistry {
    }
 
    public static void resetState() {
-      RAGDOLL_BODY_IDS.clear();
+      RagdollRelationships.reset();
       PLAYER_COOLDOWNS.clear();
       LAUNCH_RESERVATIONS.clear();
-      RagdollSeatingHelper.resetState();
+      RagdollSessionManager.resetState();
+      RagdollDeferredSync.resetState();
       RagdollAssemblyHelper.resetState();
    }
 

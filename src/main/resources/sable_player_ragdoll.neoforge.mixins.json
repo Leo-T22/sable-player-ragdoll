@@ -7,9 +7,9 @@
   "mixins": [
     "EntityRagdollHiddenMixin",
     "PlayerRagdollHiddenMixin",
-    "PhysicsBlockPropertyHelperMixin",
     "LivingEntityRagdollDamageMixin",
-    "ActiveSableCompanionBodyGuardMixin"
+    "ActiveSableCompanionBodyGuardMixin",
+    "SubLevelRemovalIterationMixin"
   ],
   "client": [
     "ActiveSableCompanionCameraMixin",

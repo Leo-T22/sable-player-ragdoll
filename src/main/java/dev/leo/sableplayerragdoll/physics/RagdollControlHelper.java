@@ -206,7 +206,7 @@ public final class RagdollControlHelper {
    /** Finds another sub-level touching the hand to grab, skipping the arm itself and its own ragdoll. */
    private static ServerSubLevel findGrabTarget(ServerLevel level, ServerSubLevel arm, Vec3 worldHand) {
       UUID armId = arm.getUniqueId();
-      UUID armRoot = RagdollAssemblyHelper.linkedRoot(armId);
+      UUID armRoot = RagdollBlockOwnership.sessionId(arm);
       BoundingBox3d bounds = new BoundingBox3d(
          AABB.ofSize(worldHand, GRAB_RADIUS * 2, GRAB_RADIUS * 2, GRAB_RADIUS * 2));
       for (SubLevel subLevel : Sable.HELPER.getAllIntersecting(level, bounds)) {
@@ -216,8 +216,9 @@ public final class RagdollControlHelper {
          if (candidate.getUniqueId().equals(armId)) {
             continue; // the grabbing arm itself
          }
-         UUID candidateRoot = RagdollAssemblyHelper.linkedRoot(candidate.getUniqueId());
-         if (armRoot != null && armRoot.equals(candidateRoot)) {
+         boolean sameOwner = RagdollBlockOwnership.blocks(candidate).stream().anyMatch(be ->
+               armRoot.equals(((RagdollOwnedBlock) be).ragdollIdentity().owner()));
+         if (sameOwner) {
             continue; // another part of the same ragdoll
          }
          return candidate;
@@ -302,20 +303,9 @@ public final class RagdollControlHelper {
 
    @Nullable
    private static ServerPlayer controllingPlayer(ServerLevel level, ServerSubLevel torsoSubLevel) {
-      UUID rootId = RagdollAssemblyHelper.linkedRoot(torsoSubLevel.getUniqueId());
-      if (rootId == null) {
-         return null;
-      }
-
-      SubLevelContainer container = SubLevelContainer.getContainer(level);
-      if (!(container instanceof ServerSubLevelContainer serverContainer)) {
-         return null;
-      }
-
-      SubLevel subLevel = serverContainer.getSubLevel(rootId);
-      if (!(subLevel instanceof ServerSubLevel rootSubLevel) || rootSubLevel.isRemoved()) {
-         return null;
-      }
+      UUID rootId = RagdollBlockOwnership.sessionId(torsoSubLevel);
+      ServerSubLevel rootSubLevel = RagdollBlockOwnership.root(level, rootId);
+      if (rootSubLevel == null || rootSubLevel.isRemoved()) return null;
 
       UUID playerId = RagdollSessionManager.getPlayerId(rootSubLevel);
       return playerId == null || !(level.getEntity(playerId) instanceof ServerPlayer player) ? null : player;

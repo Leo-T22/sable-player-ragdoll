@@ -13,16 +13,10 @@ import dev.ryanhcode.sable.api.SubLevelAssemblyHelper;
 import dev.ryanhcode.sable.api.physics.constraint.ConstraintJointAxis;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintConfiguration;
 import dev.ryanhcode.sable.api.physics.constraint.PhysicsConstraintHandle;
-import dev.ryanhcode.sable.api.sublevel.ServerSubLevelContainer;
-import dev.ryanhcode.sable.api.sublevel.SubLevelContainer;
 import dev.ryanhcode.sable.companion.math.BoundingBox3i;
 import dev.ryanhcode.sable.sublevel.ServerSubLevel;
-import dev.ryanhcode.sable.sublevel.SubLevel;
-import dev.ryanhcode.sable.sublevel.storage.SubLevelRemovalReason;
 import dev.ryanhcode.sable.sublevel.system.SubLevelPhysicsSystem;
-import java.util.ArrayList;
 import java.util.EnumMap;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -63,12 +57,7 @@ public final class RagdollAssemblyHelper {
       new PartSpawn("right_leg", BodyPart.RIGHT_LEG, -0.12, 0.5125, 0.0, 0.0)
    };
    private static final Map<BodyPart, PartSpawn> PART_BY_BODY = buildPartIndex();
-   private static final List<PhysicsConstraintHandle> ACTIVE_CONSTRAINTS = new ArrayList<>();
    private static final Map<UUID, Map<BodyPart, RagdollJoint>> JOINTS_BY_ROOT = new ConcurrentHashMap<>();
-   private static final Map<UUID, List<UUID>> DOLL_PARTS_BY_ROOT = new ConcurrentHashMap<>();
-   private static final Map<UUID, BodyPart> BODY_PART_BY_SUBLEVEL = new ConcurrentHashMap<>();
-   private static final Map<UUID, UUID> ROOT_BY_PART = new ConcurrentHashMap<>();
-   private static final Set<UUID> ELYTRA_ROOTS = ConcurrentHashMap.newKeySet();
 
    private RagdollAssemblyHelper() {
    }
@@ -124,7 +113,6 @@ public final class RagdollAssemblyHelper {
       boolean suppressLegContacts,
       RagdollLimbOptions limbs
    ) {
-      pruneInactiveConstraints();
       Map<BodyPart, SpawnedPart> spawnedParts = new EnumMap<>(BodyPart.class);
       Quaterniond bodyOrientation = orientationFromBasis(right, up, forward);
 
@@ -139,6 +127,17 @@ public final class RagdollAssemblyHelper {
       }
 
       SpawnedPart torsoRoot = spawnedParts.get(BodyPart.TORSO);
+      UUID ownerId = torsoRoot == null ? UUID.randomUUID() : torsoRoot.subLevel().getUniqueId();
+      spawnedParts.forEach((bodyPart, spawnedPart) -> RagdollBlockOwnership.assign(
+         spawnedPart.subLevel(), ownerId, spawnedPart.subLevel().getUniqueId(), bodyPart.getSerializedName()));
+      var family = spawnedParts.values().stream()
+            .flatMap(spawned -> RagdollBlockOwnership.blocks(spawned.subLevel()).stream()).toList();
+      for (var be : family) {
+         var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+         identity.parent(ownerId.equals(identity.limb()) ? null : ownerId);
+         be.setChanged();
+      }
+      RagdollRelationships.wire(family);
       if (torsoRoot == null) {
          removeParts(level, spawnedParts.values().stream().map(SpawnedPart::subLevel).toList());
          return null;
@@ -166,20 +165,17 @@ public final class RagdollAssemblyHelper {
       }
 
       int constraints = attachSpawnedParts(level, spawnedParts, suppressLegContacts, limbs);
+      Map<UUID, UUID> initialBodies = new java.util.HashMap<>();
+      spawnedParts.values().forEach(spawned -> initialBodies.put(spawned.subLevel().getUniqueId(), spawned.subLevel().getUniqueId()));
+      for (var be : family) {
+         var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+         if (ownerId.equals(identity.limb())) identity.jointBodies = Map.copyOf(initialBodies);
+      }
       List<ServerSubLevel> subLevels = spawnedParts.values().stream().map(SpawnedPart::subLevel).toList();
       UUID rootId = torsoRoot.subLevel().getUniqueId();
-      DOLL_PARTS_BY_ROOT.put(rootId, subLevels.stream().map(ServerSubLevel::getUniqueId).toList());
-      if (suppressLegContacts) {
-         ELYTRA_ROOTS.add(rootId);
-      }
-
-      spawnedParts.forEach((bodyPart, spawnedPart) -> {
-         UUID partId = spawnedPart.subLevel().getUniqueId();
-         BODY_PART_BY_SUBLEVEL.put(partId, bodyPart);
-         ROOT_BY_PART.put(partId, rootId);
-      });
       Map<BodyPart, UUID> partSubLevelIds = new EnumMap<>(BodyPart.class);
       spawnedParts.forEach((bodyPart, spawnedPart) -> partSubLevelIds.put(bodyPart, spawnedPart.subLevel().getUniqueId()));
+      RagdollAssemblyData.write(level, rootId, limbs);
       return new Doll(torsoRoot.subLevel(), subLevels, partSubLevelIds, constraints);
    }
 
@@ -188,78 +184,52 @@ public final class RagdollAssemblyHelper {
       return spawn(level, player, baseCenter, right, forward);
    }
 
-   public static List<UUID> consumeLinkedParts(UUID rootId) {
-      List<UUID> partIds = DOLL_PARTS_BY_ROOT.remove(rootId);
-      ELYTRA_ROOTS.remove(rootId);
-      List<UUID> linkedParts = partIds == null ? List.of(rootId) : partIds;
-      linkedParts.forEach(BODY_PART_BY_SUBLEVEL::remove);
-      linkedParts.forEach(ROOT_BY_PART::remove);
-      JOINTS_BY_ROOT.remove(rootId);
+   public static void clearRuntime(UUID rootId) {
+      clearJoints(rootId);
       RagdollMotorEffects.clear(rootId);
-      return linkedParts;
    }
 
-   public static List<UUID> linkedParts(UUID rootId) {
-      List<UUID> partIds = DOLL_PARTS_BY_ROOT.get(rootId);
-      return partIds == null ? List.of(rootId) : partIds;
-   }
-
-   public static Map<BodyPart, UUID> linkedPartsAsMap(UUID rootId) {
-      List<UUID> parts = linkedParts(rootId);
-      Map<BodyPart, UUID> result = new EnumMap<>(BodyPart.class);
-      for (UUID partId : parts) {
-         BodyPart bodyPart = BODY_PART_BY_SUBLEVEL.get(partId);
-         if (bodyPart != null) result.put(bodyPart, partId);
-      }
-      return result;
-   }
-
-   public static @Nullable UUID linkedHeadPart(UUID rootId) {
-      for (UUID partId : linkedParts(rootId)) {
-         if (BODY_PART_BY_SUBLEVEL.get(partId) == BodyPart.HEAD) {
-            return partId;
+   static void clearJoints(UUID rootId) {
+      Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.remove(rootId);
+      if (joints != null) {
+         for (RagdollJoint joint : joints.values()) {
+            if (joint.handle() != null) {
+               if (joint.handle().isValid()) joint.handle().remove();
+            }
          }
+      }
+   }
+
+   public static List<UUID> linkedParts(ServerLevel level, UUID rootId) {
+      Map<BodyPart, UUID> parts = RagdollAssemblyData.parts(level, rootId);
+      return parts.isEmpty() ? List.of(rootId) : List.copyOf(parts.values());
+   }
+
+   public static @Nullable UUID linkedRoot(ServerLevel level, UUID partId) {
+      return RagdollAssemblyData.ownerForLimb(level, partId);
+   }
+
+   public static @Nullable BodyPart bodyPartOf(ServerLevel level, UUID subLevelId) {
+      for (var be : RagdollBlockOwnership.loadedBlocks(level)) {
+         if (be instanceof RagdollPartBlockEntity part
+               && subLevelId.equals(part.ragdollIdentity().limb())) return part.bodyPart();
       }
       return null;
    }
 
-   public static @Nullable UUID linkedRoot(UUID partId) {
-      return ROOT_BY_PART.get(partId);
-   }
-
-   public static @Nullable BodyPart bodyPartOf(UUID subLevelId) {
-      return BODY_PART_BY_SUBLEVEL.get(subLevelId);
-   }
-
-   public static @Nullable UUID dismember(UUID rootId, BodyPart limb) {
+   public static @Nullable UUID dismember(ServerLevel level, UUID rootId, BodyPart limb) {
       if (limb == BodyPart.TORSO) return null;
-      UUID limbId = linkedPartsAsMap(rootId).get(limb);
+      UUID limbId = RagdollAssemblyData.parts(level, rootId).get(limb);
       Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.get(rootId);
       RagdollJoint joint = joints == null ? null : joints.remove(limb);
       if (joint != null && joint.handle() != null) {
          if (joint.handle().isValid()) joint.handle().remove();
-         ACTIVE_CONSTRAINTS.remove(joint.handle());
-      }
-      if (limbId != null) {
-         BODY_PART_BY_SUBLEVEL.remove(limbId);
-         ROOT_BY_PART.remove(limbId);
-         List<UUID> parts = DOLL_PARTS_BY_ROOT.get(rootId);
-         if (parts != null) {
-            List<UUID> remaining = new ArrayList<>(parts);
-            remaining.remove(limbId);
-            DOLL_PARTS_BY_ROOT.put(rootId, remaining);
-         }
       }
       return limbId;
    }
 
-   public static boolean isRagdollPart(UUID subLevelId) {
-      return ROOT_BY_PART.containsKey(subLevelId);
-   }
-
-   public static boolean isElytraRagdollPart(UUID subLevelId) {
-      UUID rootId = ROOT_BY_PART.get(subLevelId);
-      return rootId != null && ELYTRA_ROOTS.contains(rootId);
+   public static boolean isRagdollPart(ServerLevel level, UUID subLevelId) {
+      return RagdollAssemblyData.ownerForLimb(level, subLevelId) != null;
    }
 
    public static Map<BodyPart, RagdollJoint> joints(UUID rootId) {
@@ -272,7 +242,13 @@ public final class RagdollAssemblyHelper {
       for (PartSpawn part : PARTS) {
          ServerSubLevel subLevel = subLevels.get(part.bodyPart());
          if (subLevel != null) {
-            parts.put(part.bodyPart(), new SpawnedPart(subLevel, Vec3.ZERO, subLevel.getPlot().getCenterBlock(), part.rightOffset()));
+            BlockPos position = subLevel.getPlot().getCenterBlock();
+            for (var be : RagdollBlockOwnership.blocks(subLevel)) {
+               var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
+               if (RagdollBlockOwnership.sessionId(subLevel).equals(identity.owner())
+                     && part.bodyPart().getSerializedName().equals(identity.kind())) { position = be.getBlockPos(); break; }
+            }
+            parts.put(part.bodyPart(), new SpawnedPart(subLevel, Vec3.ZERO, position, rightOffset(part, limbs.get(part.bodyPart()))));
          }
       }
 
@@ -282,32 +258,11 @@ public final class RagdollAssemblyHelper {
       }
 
       attachSpawnedParts(level, parts, false, limbs);
-      UUID rootId = torsoRoot.getUniqueId();
+      UUID rootId = RagdollBlockOwnership.sessionId(torsoRoot);
       Map<BodyPart, RagdollJoint> joints = JOINTS_BY_ROOT.get(rootId);
       PhysicsConstraintHandle representative = joints == null || joints.isEmpty() ? null : joints.values().iterator().next().handle();
 
-      List<ServerSubLevel> restoredSubLevels = parts.values().stream().map(SpawnedPart::subLevel).toList();
-      DOLL_PARTS_BY_ROOT.put(rootId, restoredSubLevels.stream().map(ServerSubLevel::getUniqueId).toList());
-      parts.forEach((bodyPart, spawnedPart) -> {
-         UUID partId = spawnedPart.subLevel().getUniqueId();
-         BODY_PART_BY_SUBLEVEL.put(partId, bodyPart);
-         ROOT_BY_PART.put(partId, rootId);
-      });
       return representative;
-   }
-
-   public static double launchVelocityScale(UUID subLevelId) {
-      BodyPart bodyPart = BODY_PART_BY_SUBLEVEL.get(subLevelId);
-      if (bodyPart == null) {
-         return 1.0;
-      }
-
-      return switch (bodyPart) {
-         case TORSO -> 0.34;
-         case HEAD -> 0.22;
-         case LEFT_ARM, RIGHT_ARM -> 0.14;
-         case LEFT_LEG, RIGHT_LEG -> 0.08;
-      };
    }
 
    private static ServerSubLevel assemblePart(ServerLevel level, BlockPos pos, PartSpawn part, GameProfile profile, @Nullable Player equipmentSource) {
@@ -352,7 +307,7 @@ public final class RagdollAssemblyHelper {
       }
 
       RagdollLimbConfig headConfig = limbs.get(BodyPart.HEAD);
-      UUID rootId = torso.subLevel().getUniqueId();
+      UUID rootId = RagdollBlockOwnership.sessionId(torso.subLevel());
       SpawnedPart head = parts.get(BodyPart.HEAD);
       JointAnchor neck = jointAnchor(BodyPart.HEAD, 0.0);
       int constraints = 0;
@@ -426,7 +381,7 @@ public final class RagdollAssemblyHelper {
       Vector3dc angularTarget,
       String name
    ) {
-      if (first == null || second == null) {
+      if (first == null || second == null || first.subLevel() == second.subLevel()) {
          return 0;
       }
 
@@ -440,7 +395,6 @@ public final class RagdollAssemblyHelper {
          );
          PhysicsConstraintHandle handle = SableConstraintCompat.addConstraint(physicsSystem.getPipeline(), first.subLevel(), second.subLevel(), config);
          handle.setContactsEnabled(RagdollSettings.partSelfCollision());
-         ACTIVE_CONSTRAINTS.add(handle);
          if (rootId != null) {
             JOINTS_BY_ROOT.computeIfAbsent(rootId, unused -> new EnumMap<>(BodyPart.class))
                .put(bodyPart, new RagdollJoint(handle, new Vector3d(angularTarget), angularStiffness, angularDamping));
@@ -553,45 +507,13 @@ public final class RagdollAssemblyHelper {
    }
 
    private static void removeParts(ServerLevel level, List<ServerSubLevel> subLevels) {
-      SubLevelContainer container = SubLevelContainer.getContainer(level);
-      if (!(container instanceof ServerSubLevelContainer serverContainer)) {
-         return;
-      }
-
-      SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
       for (ServerSubLevel subLevel : subLevels) {
-         SubLevel current = serverContainer.getSubLevel(subLevel.getUniqueId());
-         if (!(current instanceof ServerSubLevel serverSubLevel) || serverSubLevel.isRemoved()) {
-            continue;
-         }
-         try {
-            if (physicsSystem != null) {
-               physicsSystem.getPipeline().wakeUp(serverSubLevel);
-            }
-            serverContainer.removeSubLevel(serverSubLevel, SubLevelRemovalReason.REMOVED);
-         } catch (Throwable e) {
-            SablePlayerRagdoll.LOGGER.warn("[sable_player_ragdoll] removeParts fallback markRemoved for {}: {}", serverSubLevel.getUniqueId(), e.toString());
-            serverSubLevel.markRemoved();
-         }
-      }
-   }
-
-   private static void pruneInactiveConstraints() {
-      for (Iterator<PhysicsConstraintHandle> iterator = ACTIVE_CONSTRAINTS.iterator(); iterator.hasNext();) {
-         PhysicsConstraintHandle handle = iterator.next();
-         if (handle == null || !handle.isValid()) {
-            iterator.remove();
-         }
+         RagdollCleanup.removePart(level, subLevel);
       }
    }
 
    public static void resetState() {
-      ACTIVE_CONSTRAINTS.clear();
       JOINTS_BY_ROOT.clear();
-      DOLL_PARTS_BY_ROOT.clear();
-      BODY_PART_BY_SUBLEVEL.clear();
-      ROOT_BY_PART.clear();
-      ELYTRA_ROOTS.clear();
    }
 
    public record Doll(ServerSubLevel rootSubLevel, List<ServerSubLevel> allSubLevels, Map<BodyPart, UUID> partSubLevelIds, int constraints) {

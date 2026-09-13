@@ -32,57 +32,41 @@ public final class RagdollExpireHelper {
       RagdollSeatingHelper.restoreVisibility(livingEntity);
    }
 
-   public static void expire(SubLevelPhysicsSystem physicsSystem, ServerLevel level, ServerSubLevel subLevel, String reason) {
-      if (!subLevel.isRemoved() && !RagdollSessionManager.isExpiring(subLevel)) {
+   public static void expire(ServerLevel level, ServerSubLevel subLevel, String reason) {
+      if (subLevel.isRemoved()) return;
+      if (!RagdollSessionManager.isExpiring(subLevel)) {
          RagdollSessionManager.markExpiring(subLevel, reason);
          unseatRider(level, subLevel);
          discardSeatEntities(level, subLevel);
-         RagdollSessionManager.unregister(subLevel);
-         RagdollRegistry.untrack(subLevel.getUniqueId());
-         RagdollDeferredSync.queueRemoval(subLevel.getUniqueId(), level);
-         SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] expiring ragdoll {} ({})", RagdollRegistry.shortId(subLevel.getUniqueId()), reason);
+         SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] expiring ragdoll {} ({})", RagdollRegistry.shortId(RagdollBlockOwnership.sessionId(subLevel)), reason);
       }
-   }
-
-   public static void expireImmediate(SubLevelPhysicsSystem physicsSystem, ServerLevel level, ServerSubLevel subLevel, String reason) {
-      expireImmediate(physicsSystem, level, subLevel, reason, false);
-   }
-
-   public static void expireImmediate(SubLevelPhysicsSystem physicsSystem, ServerLevel level, ServerSubLevel subLevel, String reason, boolean placePlayerAtRagdoll) {
-      if (!subLevel.isRemoved() && !RagdollSessionManager.isExpiring(subLevel)) {
-         RagdollSessionManager.markExpiring(subLevel, reason);
-         unseatRider(level, subLevel, placePlayerAtRagdoll);
-         discardSeatEntities(level, subLevel);
-         RagdollSessionManager.unregister(subLevel);
-         RagdollRegistry.untrack(subLevel.getUniqueId());
-         RagdollDeferredSync.cancel(subLevel.getUniqueId());
-         RagdollRemovalHelper.removeRagdollSubLevel(physicsSystem, subLevel);
-         SablePlayerRagdoll.LOGGER.info("[sable_player_ragdoll] expiring ragdoll {} immediately ({})", RagdollRegistry.shortId(subLevel.getUniqueId()), reason);
-      }
+      RagdollSessionManager.unregister(subLevel);
+      RagdollDeferredSync.cancel(RagdollBlockOwnership.sessionId(subLevel));
    }
 
    private static void unseatRider(ServerLevel level, ServerSubLevel subLevel) {
-      unseatRider(level, subLevel, false);
-   }
-
-   private static void unseatRider(ServerLevel level, ServerSubLevel subLevel, boolean placePlayerAtRagdoll) {
       UUID playerId = RagdollSessionManager.getPlayerId(subLevel);
       if (playerId != null) {
-         releaseRider(level, subLevel, playerId, placePlayerAtRagdoll);
+         releaseRider(level, subLevel, playerId);
       }
    }
 
    static void releaseFailedLaunch(ServerLevel level, ServerSubLevel subLevel, @Nullable UUID seatEntityId) {
       if (seatEntityId != null) {
-         releaseRider(level, subLevel, seatEntityId, true);
+         releaseRider(level, subLevel, seatEntityId);
       }
       discardSeatEntities(level, subLevel);
    }
 
-   private static void releaseRider(ServerLevel level, ServerSubLevel subLevel, UUID riderId, boolean placePlayerAtRagdoll) {
+   private static void releaseRider(ServerLevel level, ServerSubLevel subLevel, UUID riderId) {
       Entity entity = level.getEntity(riderId);
       if (entity instanceof LivingEntity livingEntity) {
-         Vec3 releasePosition = placePlayerAtRagdoll ? releasePosition(level, subLevel) : null;
+         if (livingEntity.getVehicle() != null) {
+            var seatTag = livingEntity.getVehicle().getPersistentData();
+            if (seatTag.hasUUID(RagdollBlockLifetime.SOURCE_SESSION)
+                  && !RagdollBlockOwnership.sessionId(subLevel).equals(seatTag.getUUID(RagdollBlockLifetime.SOURCE_SESSION))) return;
+         }
+         Vec3 releasePosition = releasePosition(level, subLevel);
          Vec3 inheritedVelocity = sublevelVelocityAsBlocksPerTick(level, subLevel);
          Vec3 exitVelocity = inheritedVelocity == null ? Vec3.ZERO : inheritedVelocity;
          if (livingEntity.isPassenger()) {
@@ -117,30 +101,28 @@ public final class RagdollExpireHelper {
 
    @Nullable
    private static Vec3 releasePosition(ServerLevel level, ServerSubLevel rootSubLevel) {
-      ServerSubLevel source = torsoPart(level, rootSubLevel);
-      if (source.getPlot() == null) return null;
-      return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(source.getPlot().getCenterBlock())).add(0.0, 0.5, 0.0);
+      var torso = RagdollBlockOwnership.findLimb(level, RagdollBlockOwnership.sessionId(rootSubLevel));
+      if (torso == null) return null;
+      return Sable.HELPER.projectOutOfSubLevel(level, Vec3.atCenterOf(torso.getBlockPos())).add(0.0, 0.5, 0.0);
    }
 
    @Nullable
    private static Vec3 sublevelVelocityAsBlocksPerTick(ServerLevel level, ServerSubLevel rootSubLevel) {
       SubLevelPhysicsSystem physicsSystem = SubLevelPhysicsSystem.get(level);
-      if (physicsSystem == null) return null;
-      ServerSubLevel source = torsoPart(level, rootSubLevel);
-      RigidBodyHandle handle = physicsSystem.getPhysicsHandle(source);
+      if (physicsSystem == null || rootSubLevel.isRemoved()) return null;
+      RigidBodyHandle handle = physicsSystem.getPhysicsHandle(rootSubLevel);
       if (handle == null || !handle.isValid()) return null;
       Vector3d vel = handle.getLinearVelocity(new Vector3d());
       return new Vec3(vel.x / 20.0, vel.y / 20.0, vel.z / 20.0);
-   }
-
-   private static ServerSubLevel torsoPart(ServerLevel level, ServerSubLevel rootSubLevel) {
-      return rootSubLevel;
    }
 
    private static void discardSeatEntities(ServerLevel level, ServerSubLevel subLevel) {
       AABB bounds = plotBounds(subLevel);
       if (bounds != null) {
          for (RagdollSeatEntity seat : level.getEntitiesOfClass(RagdollSeatEntity.class, bounds)) {
+            var seatTag = seat.getPersistentData();
+            if (!seatTag.hasUUID(RagdollBlockLifetime.SOURCE_SESSION)
+                  || !RagdollBlockOwnership.sessionId(subLevel).equals(seatTag.getUUID(RagdollBlockLifetime.SOURCE_SESSION))) continue;
             seat.ejectPassengers();
             seat.discard();
          }
