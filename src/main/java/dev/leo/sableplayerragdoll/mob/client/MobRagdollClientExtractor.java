@@ -26,12 +26,17 @@ public final class MobRagdollClientExtractor {
     }
 
     public static void extractAndSend(int entityId) {
+        extractAndSend(entityId, false);
+    }
+
+    public static void extractAndSend(int entityId, boolean suppressDeathEffects) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
             return;
         }
         Entity entity = minecraft.level.getEntity(entityId);
         if (entity instanceof LivingEntity livingEntity) {
+            if (suppressDeathEffects) MobRagdollClientState.setDeathPending(livingEntity);
             extractAndSend(livingEntity);
         }
     }
@@ -107,6 +112,9 @@ public final class MobRagdollClientExtractor {
         tag.remove("Age");
         tag.remove("ForcedAge");
         tag.remove("InLove");
+        tag.remove("Health");
+        tag.remove("HurtTime");
+        tag.remove("DeathTime");
     }
 
     private static MobRagdollSpawnPacket.Part toPacketPart(

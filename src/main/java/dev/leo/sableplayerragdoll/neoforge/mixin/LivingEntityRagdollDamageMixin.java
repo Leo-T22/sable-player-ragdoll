@@ -1,6 +1,7 @@
 package dev.leo.sableplayerragdoll.neoforge.mixin;
 
 import dev.leo.sableplayerragdoll.mob.MobRagdollAssembly;
+import dev.leo.sableplayerragdoll.mob.client.MobRagdollClientState;
 import dev.leo.sableplayerragdoll.physics.RagdollSessionManager;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
@@ -27,7 +28,16 @@ public abstract class LivingEntityRagdollDamageMixin {
     @Inject(method = "travel", at = @At("HEAD"), cancellable = true)
     private void splrmob$freezeRagdolledMovement(Vec3 travelVector, CallbackInfo callbackInfo) {
         LivingEntity entity = (LivingEntity) (Object) this;
-        if (MobRagdollAssembly.isConverted(entity.getUUID())) {
+        if (MobRagdollAssembly.isConverted(entity)) {
+            callbackInfo.cancel();
+        }
+    }
+
+    @Inject(method = "handleEntityEvent", at = @At("HEAD"), cancellable = true)
+    private void splrmob$suppressRagdollDeathPoof(byte id, CallbackInfo callbackInfo) {
+        LivingEntity entity = (LivingEntity) (Object) this;
+        if (id == 60 && entity.level().isClientSide()
+                && (MobRagdollAssembly.isConverted(entity) || MobRagdollClientState.isDeathPending(entity))) {
             callbackInfo.cancel();
         }
     }
@@ -58,6 +68,6 @@ public abstract class LivingEntityRagdollDamageMixin {
         if (entity instanceof ServerPlayer serverPlayer && RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer)) {
             return true;
         }
-        return MobRagdollAssembly.isConverted(entity.getUUID());
+        return MobRagdollAssembly.isConverted(entity);
     }
 }

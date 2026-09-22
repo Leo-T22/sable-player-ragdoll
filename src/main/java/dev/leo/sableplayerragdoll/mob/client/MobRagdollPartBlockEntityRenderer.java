@@ -260,7 +260,8 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
             return null;
         }
         Entity entity = minecraft.level.getEntity(blockEntity.sourceEntityNetworkId());
-        if (entity instanceof LivingEntity living && living.getType().builtInRegistryHolder().key().location().equals(blockEntity.entityType())) {
+        if (entity instanceof LivingEntity living && living.isAlive()
+                && living.getType().builtInRegistryHolder().key().location().equals(blockEntity.entityType())) {
             return living;
         }
         return null;
@@ -408,6 +409,9 @@ public final class MobRagdollPartBlockEntityRenderer implements BlockEntityRende
         copy.remove("Age");
         copy.remove("ForcedAge");
         copy.remove("InLove");
+        copy.remove("Health");
+        copy.remove("HurtTime");
+        copy.remove("DeathTime");
         return copy;
     }
 

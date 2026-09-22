@@ -227,11 +227,11 @@ public final class RagdollAPI {
       if (!MobRagdollAssembly.requestLaunch(level, mob, linearVelocity, angularVelocity, options)) {
          return null;
       }
-      return new ActiveMobRagdollSession(level, mob);
+      return new ActiveMobRagdollSession(level, mob, MobRagdollAssembly.sessionId(mob));
    }
 
    public static boolean isMobRagdolled(LivingEntity mob) {
-      return MobRagdollAssembly.isPendingOrConverted(mob.getUUID());
+      return MobRagdollAssembly.isPendingOrConverted(mob);
    }
 
    public static void releaseMob(LivingEntity mob) {
@@ -263,20 +263,30 @@ public final class RagdollAPI {
       return MobRagdollAssembly.dismemberBySubLevel(level, partSubLevelId);
    }
 
-   private record ActiveMobRagdollSession(ServerLevel level, LivingEntity entity) implements MobRagdollSession {
+   private record ActiveMobRagdollSession(ServerLevel level, LivingEntity entity, UUID session) implements MobRagdollSession {
       @Override
       public Vec3 currentVelocity() {
-         return MobRagdollAssembly.currentVelocity(entity.getUUID());
+         return MobRagdollAssembly.currentVelocity(level, session);
       }
 
       @Override
       public long elapsedTicks() {
-         return MobRagdollAssembly.elapsedTicks(level, entity.getUUID());
+         return MobRagdollAssembly.elapsedTicks(level, session);
+      }
+
+      @Override
+      public void applyWailing(RagdollWailingOptions options) {
+         MobRagdollAssembly.applyWailing(level, session, options);
+      }
+
+      @Override
+      public void stopWailing() {
+         MobRagdollAssembly.stopWailing(level, session);
       }
 
       @Override
       public void release() {
-         MobRagdollAssembly.despawn(level, entity, MobRagdollEndEvent.Reason.RELEASED);
+         MobRagdollAssembly.releaseSession(level, entity, session, MobRagdollEndEvent.Reason.RELEASED);
       }
    }
 

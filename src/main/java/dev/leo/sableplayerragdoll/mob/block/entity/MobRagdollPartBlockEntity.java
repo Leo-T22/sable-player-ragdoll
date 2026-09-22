@@ -93,7 +93,6 @@ public final class MobRagdollPartBlockEntity extends BlockEntity implements Bloc
     private float visualXSize = 8.0F;
     private float visualYSize = 8.0F;
     private float visualZSize = 8.0F;
-    private boolean restoreTriggered;
     private final Map<UUID, GrabConstraint> grabbers = new HashMap<>();
 
     public MobRagdollPartBlockEntity(BlockPos pos, BlockState blockState) {
@@ -240,20 +239,16 @@ public final class MobRagdollPartBlockEntity extends BlockEntity implements Bloc
 
     @Override
     public void sable$physicsTick(ServerSubLevel subLevel, RigidBodyHandle handle, double timeStep) {
+        if (!this.ragdollIdentity.severed() && this.renderAnchor
+                && subLevel.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            dev.leo.sableplayerragdoll.physics.RagdollRelationships.withBlock(this, () ->
+                    MobRagdollAssembly.tickPart(serverLevel, this, handle));
+        }
         this.checkGrabbers();
         for (GrabConstraint constraint : this.grabbers.values()) {
             constraint.physicsTick(subLevel);
         }
 
-        if (ragdollIdentity.severed() || this.restoreTriggered) {
-            return;
-        }
-        if (this.role == MobPartRole.TORSO
-                && subLevel.getLevel() instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            if (MobRagdollAssembly.restoreFromSave(serverLevel, ragdollIdentity.known() ? ragdollIdentity.limb() : subLevel.getUniqueId())) {
-                this.restoreTriggered = true;
-            }
-        }
     }
 
     private void checkGrabbers() {
@@ -300,14 +295,14 @@ public final class MobRagdollPartBlockEntity extends BlockEntity implements Bloc
     }
 
     private void markSourceGrabbed() {
-        if (this.sourceEntityId != null && this.level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            MobRagdollAssembly.markGrabbed(serverLevel, this.sourceEntityId);
+        if (this.ragdollIdentity.owner() != null && this.level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            MobRagdollAssembly.markGrabbed(serverLevel, this.ragdollIdentity.owner());
         }
     }
 
     private void markSourceReleased() {
-        if (this.sourceEntityId != null && this.level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
-            MobRagdollAssembly.markReleased(serverLevel, this.sourceEntityId);
+        if (this.ragdollIdentity.owner() != null && this.level instanceof net.minecraft.server.level.ServerLevel serverLevel) {
+            MobRagdollAssembly.markReleased(serverLevel, this.ragdollIdentity.owner());
         }
     }
 
@@ -471,6 +466,9 @@ public final class MobRagdollPartBlockEntity extends BlockEntity implements Bloc
         copy.remove("Age");
         copy.remove("ForcedAge");
         copy.remove("InLove");
+        copy.remove("Health");
+        copy.remove("HurtTime");
+        copy.remove("DeathTime");
         return copy;
     }
 
@@ -496,7 +494,7 @@ public final class MobRagdollPartBlockEntity extends BlockEntity implements Bloc
             SubLevel standingSubLevel = Sable.HELPER.getTrackingSubLevel(player);
             if (standingSubLevel != null
                     && (RagdollAssemblyHelper.isRagdollPart(subLevel.getLevel(), standingSubLevel.getUniqueId())
-                    || MobRagdollAssembly.isRagdollPart(standingSubLevel.getUniqueId()))) {
+                    || MobRagdollAssembly.isRagdollPart(subLevel.getLevel(), standingSubLevel.getUniqueId()))) {
                 return;
             }
 

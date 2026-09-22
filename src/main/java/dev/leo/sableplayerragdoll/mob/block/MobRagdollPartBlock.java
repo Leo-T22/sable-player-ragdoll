@@ -126,8 +126,8 @@ public final class MobRagdollPartBlock extends Block implements EntityBlock, Blo
                 } else {
                     MobRagdollAssembly.attackPart(serverLevel, pos, player);
                 }
+                MobRagdollAssembly.applyKnockupForPart(serverLevel, pos);
             }
-            MobRagdollAssembly.applyKnockupForPart(pos);
         }
     }
 

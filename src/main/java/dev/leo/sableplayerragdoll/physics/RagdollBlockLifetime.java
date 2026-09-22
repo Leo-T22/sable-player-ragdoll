@@ -65,6 +65,9 @@ public final class RagdollBlockLifetime {
         var identity = ((RagdollOwnedBlock) be).ragdollIdentity();
         var containing = Sable.HELPER.getContaining(level, be.getBlockPos());
         ServerSubLevel part = containing instanceof ServerSubLevel server ? server : null;
+        if (be instanceof MobRagdollPartBlockEntity mob) {
+            dev.leo.sableplayerragdoll.mob.MobRagdollAssemblyData.migrate(level, mob, part);
+        }
         if (identity.createdAt() < 0) {
             migrate(be, part);
         }
@@ -74,9 +77,10 @@ public final class RagdollBlockLifetime {
         }
         long now = level.getGameTime();
 
-        boolean timedOut = ("TIMED".equals(identity.lifetime()) || "MOB".equals(identity.lifetime()))
+        boolean timedOut = ("TIMED".equals(identity.lifetime()) || "MOB".equals(identity.lifetime())
+                || "RECOVERING".equals(identity.lifetime()))
                 && identity.expiresAt() >= 0 && now >= identity.expiresAt();
-        if (identity.orphanExpired(now) || timedOut) {
+        if ((!(be instanceof MobRagdollPartBlockEntity) && identity.orphanExpired(now)) || timedOut) {
             expireBlock(be, level, part, identity);
             return;
         }
@@ -97,12 +101,16 @@ public final class RagdollBlockLifetime {
             case "TIMED" -> identity.expiresAt() >= 0 && level.getGameTime() < identity.expiresAt();
             case "RIDER" -> validRider(level, identity);
             case "MOB" -> validMob(level, identity);
+            case "RECOVERING" -> validMob(level, identity);
             case "SPEED" -> {
                 var root = identity.owner() == null ? part : RagdollBlockOwnership.root(level, identity.owner());
                 yield root != null && speed(root) > identity.session().getDouble("despawnSpeed");
             }
             default -> false;
         };
+        if (be instanceof MobRagdollPartBlockEntity && !identity.severed()) {
+            keep &= identity.owner() != null;
+        }
         if (be instanceof RagdollPartBlockEntity && !identity.severed()) {
             var root = identity.owner() == null ? null : RagdollBlockOwnership.root(level, identity.owner());
             // Parent absence is enforced by this block's fixed orphan deadline.

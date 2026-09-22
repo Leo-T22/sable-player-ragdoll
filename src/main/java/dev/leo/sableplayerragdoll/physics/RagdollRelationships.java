@@ -64,6 +64,10 @@ public final class RagdollRelationships {
         id.nextRelationshipCheck = now + 10 + level.random.nextInt(11);
         if (id.owner() == null || id.severed()) return;
         if (id.relatives.isEmpty()) PENDING.add(be);
+        if (be instanceof dev.leo.sableplayerragdoll.mob.block.entity.MobRagdollPartBlockEntity) {
+            id.parentResolved();
+            return;
+        }
         if (id.parent() == null) return;
         var parent = id.parentReference;
         boolean valid = live(parent, level)

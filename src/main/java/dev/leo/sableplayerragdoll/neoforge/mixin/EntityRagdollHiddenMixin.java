@@ -37,7 +37,8 @@ public abstract class EntityRagdollHiddenMixin {
         if (self instanceof ServerPlayer serverPlayer && RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer)) {
             return true;
         }
-        return MobRagdollAssembly.isConverted(self.getUUID());
+        return self instanceof net.minecraft.world.entity.LivingEntity living
+                && dev.leo.sableplayerragdoll.mob.MobRagdollSourceRecovery.active(living);
     }
 
     private static boolean ragdollPipeActive() {

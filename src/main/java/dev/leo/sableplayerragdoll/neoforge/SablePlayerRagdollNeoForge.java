@@ -70,6 +70,7 @@ import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.monster.Creeper;
 import net.minecraft.world.entity.projectile.AbstractArrow;
 import net.minecraft.world.entity.projectile.Fireball;
 import net.minecraft.world.entity.projectile.LargeFireball;
@@ -93,6 +94,7 @@ import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.common.util.FakePlayer;
 import net.neoforged.neoforge.event.entity.EntityAttributeCreationEvent;
 import net.neoforged.neoforge.event.entity.EntityJoinLevelEvent;
 import net.neoforged.neoforge.event.entity.EntityMountEvent;
@@ -103,6 +105,7 @@ import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
+import net.neoforged.neoforge.event.level.ExplosionEvent;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.event.tick.LevelTickEvent.Post;
@@ -128,6 +131,7 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityMount);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityJoinLevel);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onMobSourceTick);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onStartTracking);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockPlaced);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onBlockBreak);
@@ -138,7 +142,8 @@ public final class SablePlayerRagdollNeoForge {
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEntityInteractSpecific);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onAttackEntity);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onEquipmentChange);
-      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerDeath);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onLivingDeath);
+      NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onExplosionDetonate);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onPlayerLogout);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onRegisterCommands);
       NeoForge.EVENT_BUS.addListener(SablePlayerRagdollNeoForge::onServerStopped);
@@ -177,7 +182,7 @@ public final class SablePlayerRagdollNeoForge {
    private static void onEntityMount(EntityMountEvent event) {
       if (!(event.getLevel() instanceof ServerLevel level)) return;
       if (!event.isDismounting() && event.getEntityBeingMounted() instanceof LivingEntity mounted
-         && MobRagdollAssembly.isPendingOrConverted(mounted.getUUID())) {
+         && MobRagdollAssembly.isPendingOrConverted(mounted)) {
          event.setCanceled(true);
          return;
       }
@@ -194,9 +199,25 @@ public final class SablePlayerRagdollNeoForge {
       });
    }
 
+   private static void onMobSourceTick(net.neoforged.neoforge.event.tick.EntityTickEvent.Post event) {
+      if (event.getEntity() instanceof LivingEntity living && living.level() instanceof ServerLevel level)
+         MobRagdollAssembly.tickSource(level, living);
+   }
+
+   private static void onExplosionDetonate(ExplosionEvent.Detonate event) {
+      if (event.getExplosion().getDirectSourceEntity() instanceof Creeper creeper
+            && MobRagdollAssembly.isConverted(creeper)) {
+         if (event.getLevel() instanceof ServerLevel level) {
+            MobRagdollAssembly.explodeCreeperRagdoll(
+                  level, creeper, event.getExplosion().center(), event.getExplosion().radius());
+         }
+         event.getAffectedBlocks().clear();
+      }
+   }
+
    private static void onEntityJoinLevel(EntityJoinLevelEvent event) {
       if (event.getLevel() instanceof ServerLevel level && event.getEntity() instanceof LivingEntity living) {
-         MobRagdollAssembly.hideLoadedRagdollSource(level, living);
+         MobRagdollAssembly.hideLoadedRagdollSource(level, living, event.loadedFromDisk());
       }
    }
 
@@ -371,8 +392,10 @@ public final class SablePlayerRagdollNeoForge {
          Vec3 horizontal = new Vec3(look.x, 0.0, look.z);
          Vec3 direction = horizontal.lengthSqr() > 1.0E-6 ? horizontal.normalize() : new Vec3(0.0, 0.0, 1.0);
          Vec3 linear = direction.scale(6.0).add(0.0, 8.0, 0.0);
-         MobRagdollAssembly.requestLaunch(level, mob, linear, Vec3.ZERO,
-            MobRagdollLaunchOptions.builder().durationTicks(200).build());
+         RagdollAPI.launchMob(level, mob, linear, Vec3.ZERO, MobRagdollLaunchOptions.builder()
+            .durationTicks(100)
+            .wailing(RagdollWailingOptions.defaults())
+            .build());
       }
    }
 
@@ -438,7 +461,7 @@ public final class SablePlayerRagdollNeoForge {
       if (sourceId == null) return false;
       Entity owner = projectile.getOwner();
       if (owner != null && sourceId.equals(owner.getUUID())) return false;
-      Entity sourceEntity = level.getEntity(sourceId);
+      Entity sourceEntity = MobRagdollAssembly.sourceEntityForPart(level, hitPos);
       if (!(sourceEntity instanceof LivingEntity living) || !living.isAlive()) return false;
 
       DamageSource source = projectileDamageSource(level, projectile);
@@ -448,7 +471,7 @@ public final class SablePlayerRagdollNeoForge {
       try {
          boolean hurt = living.hurt(source, damage);
          if (hurt) {
-            MobRagdollAssembly.applyKnockup(sourceId);
+            MobRagdollAssembly.applyKnockup(level, part.ragdollIdentity().owner());
          }
          return hurt;
       } finally {
@@ -1013,15 +1036,34 @@ public final class SablePlayerRagdollNeoForge {
       }
    }
 
-   private static void onPlayerDeath(LivingDeathEvent event) {
-      if (event.isCanceled() || !(event.getEntity() instanceof ServerPlayer player)) return;
-      ServerLevel level = player.serverLevel();
-      RagdollBlockOwnership.withOwner(
-            RagdollBlockOwnership.ownerForPlayer(level, player.getUUID()), () -> {
-         ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
-         if (ragdoll == null) return;
-         RagdollExpireHelper.expire(level, ragdoll, "player died");
-      });
+   private static void onLivingDeath(LivingDeathEvent event) {
+      if (event.isCanceled()) return;
+      if (event.getEntity() instanceof ServerPlayer player) {
+         ServerLevel level = player.serverLevel();
+         RagdollBlockOwnership.withOwner(
+               RagdollBlockOwnership.ownerForPlayer(level, player.getUUID()), () -> {
+            ServerSubLevel ragdoll = RagdollSessionManager.activeRagdollForPlayer(level, player.getUUID());
+            if (ragdoll == null) return;
+            RagdollExpireHelper.expire(level, ragdoll, "player died");
+         });
+         return;
+      }
+      if (event.getEntity() instanceof net.minecraft.world.entity.Mob mob
+            && mob.level() instanceof ServerLevel level
+            && event.getSource().getEntity() instanceof ServerPlayer killer
+            && !(killer instanceof FakePlayer)) {
+         Vec3 away = mob.position().subtract(killer.position());
+         if (away.lengthSqr() < 1.0E-6) {
+            away = killer.getLookAngle();
+         }
+         Vec3 impulse = away.normalize().scale(4.5);
+         Vec3 rotation = new Vec3(
+               level.random.nextDouble() * 4.0 - 2.0,
+               level.random.nextDouble() * 4.0 - 2.0,
+               level.random.nextDouble() * 4.0 - 2.0);
+         RagdollAPI.launchMob(level, mob, mob.getDeltaMovement().add(impulse), rotation,
+               MobRagdollLaunchOptions.defaults());
+      }
    }
 
    private static void onPlayerLogout(PlayerEvent.PlayerLoggedOutEvent event) {

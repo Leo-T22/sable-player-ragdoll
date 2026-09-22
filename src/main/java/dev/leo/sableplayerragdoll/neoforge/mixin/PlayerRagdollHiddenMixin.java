@@ -31,7 +31,7 @@ public abstract class PlayerRagdollHiddenMixin {
                 && RagdollSessionManager.isPlayerCurrentlyRagdolled(serverPlayer)) {
             return true;
         }
-        return MobRagdollAssembly.isConverted(self.getUUID());
+        return MobRagdollAssembly.isConverted(self);
     }
 
     @Inject(method = "isPickable", at = @At("HEAD"), cancellable = true)
