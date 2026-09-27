@@ -16,6 +16,7 @@
     "RagdollFirstPersonEyeMixin",
     "EntitySubLevelRotationHelperMixin",
     "HumanoidArmorLayerMixin",
+    "HumanoidArmorLayerAccessor",
     "HumanoidModelMixin",
     "LivingEntityRendererAccessor",
     "LivingEntityRendererMixin",

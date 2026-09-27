@@ -125,7 +125,10 @@ dependencies {
 
     compileOnly("io.wispforest:accessories-neoforge:${accessories_version}") { transitive = false }
 
+    compileOnly("maven.modrinth:cosmetic-armor-reworked-forked:${cosmeticarmor_version}") { transitive = false }
+
     compileOnly("maven.modrinth:jade:${jade_version}")
+
 
 }
 
